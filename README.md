@@ -1,4 +1,4 @@
-# 🧠 NeuroMontage v1.5
+# 🧠 NeuroMontage
 Create publication-ready **mosaic images** *or* **animated GIFs** of brain slices with colored lesion overlays or outlines – all from the command line.
 
 ---
