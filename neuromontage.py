@@ -240,6 +240,11 @@ def parse_args():
         '--slices_per_row', type=int, default=8,
         help='Number of slices per row in the mosaic (default=8).'
     )
+    parser.add_argument(
+        '--upscale', type=float, default=1.0,
+        help='Upscale factor for final image (e.g., 2.0 = double size, 4.0 = quadruple). Default=1.0'
+    )
+
     return parser.parse_args()
 
 
@@ -256,7 +261,8 @@ def create_mosaic(
     start_slice=None,
     end_slice=None,
     outline=False,
-    highlight=False
+    highlight=False,
+    upscale=1.0
 ):
     """
     Build and save a single mosaic (JPEG) at `output_file`.
@@ -405,12 +411,8 @@ def create_mosaic(
                     for (r, c) in contour:
                         rr = int(round(r))
                         cc = int(round(c))
-                        for dr in (-1, 0, 1):
-                            for dc in (-1, 0, 1):
-                                rrr = rr + dr
-                                ccc = cc + dc
-                                if 0 <= rrr < slice_h and 0 <= ccc < slice_w:
-                                    outline_canvas[y0 + rrr, x0 + ccc, :] = color
+                        if 0 <= rr < slice_h and 0 <= cc < slice_w:
+                            outline_canvas[y0 + rr, x0 + cc, :] = color
 
     # 10) Build the final RGB composite
     if not outline_mode:
@@ -481,7 +483,12 @@ def create_mosaic(
         ] = right_label[..., None] * 3
 
     # 13) Save as JPEG
-    Image.fromarray(composite_uint8).save(output_file, format='JPEG', quality=95)
+    final_image = Image.fromarray(composite_uint8)
+    if upscale != 1.0:
+        new_w = int(final_image.width * upscale)
+        new_h = int(final_image.height * upscale)
+        final_image = final_image.resize((new_w, new_h), resample=Image.LANCZOS)
+    final_image.save(output_file, format='JPEG', quality=95)
     print(f"[NeuroMontage] Mosaic saved to {output_file}")
 
 
@@ -495,7 +502,8 @@ def create_gif(
     log_scale=False,
     thresholds=None,
     outline=False,
-    highlight=False
+    highlight=False,
+    upscale=1.0
 ):
     """
     Build and save an animated GIF at `output_file`.  
@@ -675,6 +683,15 @@ def create_gif(
         images.append(pil_frame_resized)
 
     # Save animated GIF
+    if upscale != 1.0:
+        upscaled_images = []
+        for img in images:
+            new_w = int(img.width * upscale)
+            new_h = int(img.height * upscale)
+            upscaled_img = img.resize((new_w, new_h), resample=Image.LANCZOS)
+            upscaled_images.append(upscaled_img)
+        images = upscaled_images
+
     duration_per_frame = int(gif_duration * 1000 / len(images))
     images[0].save(
         output_file,
@@ -683,6 +700,7 @@ def create_gif(
         duration=duration_per_frame,
         loop=0
     )
+
     print(f"[NeuroMontage] GIF saved to {output_file}")
 
 
@@ -700,7 +718,8 @@ def main():
             log_scale=args.log_scale,
             thresholds=args.threshold,
             outline=args.outline,
-            highlight=args.highlight
+            highlight=args.highlight,
+            upscale=args.upscale
         )
     else:
         create_mosaic(
@@ -716,7 +735,8 @@ def main():
             start_slice=args.start_slice,
             end_slice=args.end_slice,
             outline=args.outline,
-            highlight=args.highlight
+            highlight=args.highlight,
+            upscale=args.upscale
         )
 
 
