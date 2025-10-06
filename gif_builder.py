@@ -5,10 +5,11 @@ GIF animation creation for NeuroMontage.
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize, LogNorm
+from matplotlib.colors import LogNorm
 from PIL import Image
 
-from image_utils import get_slice, find_contours_on_slice, generate_lr_labels, get_orientation, get_contour_colors
+from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
+                         get_orientation, get_contour_colors, calculate_robust_normalization)
 
 
 def create_gif(
@@ -52,7 +53,9 @@ def create_gif(
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
 
-            norm_brain = Normalize(vmin=np.min(brain_data_full), vmax=np.max(brain_data_full))
+            # Robust normalization for brain
+            norm_brain = calculate_robust_normalization(brain_data_full)
+            
             thr0 = thresholds[0]
             if log_scale:
                 pos_vals = cum_data_full[cum_data_full > thr0]
@@ -60,7 +63,8 @@ def create_gif(
                     raise ValueError("No positive cumulative-segmentation values above threshold for log scaling.")
                 norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
             else:
-                norm_overlay = Normalize(vmin=np.min(cum_data_full), vmax=np.max(cum_data_full))
+                # Robust normalization for overlay
+                norm_overlay = calculate_robust_normalization(cum_data_full)
             cmap = plt.get_cmap(colormap_name)
 
         else:
@@ -74,11 +78,16 @@ def create_gif(
                     seg_data = seg_data[:, :, :, 0]
                 all_masks.append(seg_data)
 
+            # Robust normalization for brain
+            norm_brain = calculate_robust_normalization(brain_data_full)
+            
             contour_colors = get_contour_colors()
             num_colors = len(contour_colors)
     else:
         outline_mode = False
         single_file = False
+        # Robust normalization for brain-only mode
+        norm_brain = calculate_robust_normalization(brain_data_full)
 
     valid_slices = [
         i for i in range(brain_data_full.shape[2])
@@ -109,7 +118,8 @@ def create_gif(
             frame_uint8 = (frame_rgb * 255).astype(np.uint8)
 
         elif has_segmentation and outline_mode:
-            rgb_base = plt.cm.gray(base_slice / np.max(brain_data_full))[..., :3]
+            base_norm = norm_brain(base_slice)
+            rgb_base = plt.cm.gray(base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
             for m_i, mask_vol in enumerate(all_masks):
@@ -130,7 +140,8 @@ def create_gif(
                                 if 0 <= rrr < slice_h and 0 <= ccc < slice_w:
                                     frame_uint8[rrr, ccc, :] = color
         else:
-            rgb_base = plt.cm.gray(base_slice / np.max(brain_data_full))[..., :3]
+            base_norm = norm_brain(base_slice)
+            rgb_base = plt.cm.gray(base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
         # Add L/R labels

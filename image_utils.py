@@ -4,6 +4,7 @@ Image processing utilities for NeuroMontage.
 
 import numpy as np
 import skimage.measure
+from matplotlib.colors import Normalize
 from skimage.transform import resize
 
 
@@ -81,3 +82,74 @@ def get_contour_colors():
         np.array([204, 121, 167], dtype=np.uint8),  # reddish purple
         np.array([0, 0, 0], dtype=np.uint8),        # black
     ]
+
+
+def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percentile=99.99):
+    """
+    Calculate robust normalization bounds excluding background.
+    
+    This function excludes the bottom 5% of unique intensity values (typically background)
+    and then calculates percentile-based normalization bounds from the remaining voxels.
+    This approach is robust to outliers and handles volumes with large background regions.
+    
+    Args:
+        volume_data: numpy array of intensity values (3D or 4D)
+        lower_percentile: Lower percentile for normalization (default: 1)
+        upper_percentile: Upper percentile for normalization (default: 99.99)
+    
+    Returns:
+        Normalize: matplotlib Normalize object with robust vmin/vmax
+    
+    Example:
+        >>> brain_data = nib.load('brain.nii.gz').get_fdata()
+        >>> norm = calculate_robust_normalization(brain_data)
+        >>> normalized_slice = norm(brain_data[:, :, 50])
+    """
+    # Exclude background by removing the bottom 5% of unique intensity values
+    unique_values = np.unique(volume_data)
+    threshold_5pct = np.percentile(unique_values, 5)
+    brain_voxels = volume_data[volume_data > threshold_5pct]
+    
+    if brain_voxels.size > 0:
+        # Calculate robust bounds from non-background voxels
+        vmin = np.percentile(brain_voxels, lower_percentile)
+        vmax = np.percentile(brain_voxels, upper_percentile)
+    else:
+        # Fallback if no voxels above threshold (shouldn't happen in practice)
+        vmin = np.min(volume_data)
+        vmax = np.max(volume_data)
+    
+    # Ensure vmax > vmin to avoid division by zero
+    if vmax <= vmin:
+        vmax = vmin + 1
+    
+    return Normalize(vmin=vmin, vmax=vmax)
+
+
+def calculate_median_excluding_background(volume_data):
+    """
+    Calculate median intensity excluding background voxels.
+    
+    This function excludes the bottom 5% of unique intensity values (typically background)
+    before calculating the median. Useful for intensity comparisons across volumes.
+    
+    Args:
+        volume_data: numpy array of intensity values (3D)
+    
+    Returns:
+        float: Median intensity of non-background voxels
+    
+    Example:
+        >>> brain_data = nib.load('brain.nii.gz').get_fdata()
+        >>> median = calculate_median_excluding_background(brain_data)
+    """
+    # Exclude background by removing the bottom 5% of unique intensity values
+    unique_values = np.unique(volume_data)
+    threshold_5pct = np.percentile(unique_values, 5)
+    brain_voxels = volume_data[volume_data > threshold_5pct]
+    
+    if brain_voxels.size > 0:
+        return np.median(brain_voxels)
+    else:
+        # Fallback if no voxels above threshold
+        return np.median(volume_data)

@@ -5,12 +5,13 @@
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize, LogNorm
+from matplotlib.colors import LogNorm
 from PIL import Image
 from skimage.transform import resize
 
 from layout_utils import RESOLUTION_PRESETS, determine_auto_resolution, calculate_optimal_layout
-from image_utils import get_slice, find_contours_on_slice, generate_lr_labels, get_orientation, get_contour_colors
+from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
+                         get_orientation, get_contour_colors, calculate_robust_normalization)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -155,30 +156,26 @@ def create_mosaic(
         alpha_mask = np.zeros((canvas_h, canvas_w), dtype=np.float32)
         outline_canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
 
-    # Normalization
-    norm_brain = Normalize(vmin=np.min(brain_data_full), vmax=np.max(brain_data_full))
+    # Robust normalization for brain
+    norm_brain = calculate_robust_normalization(brain_data_full)
     
     if has_segmentation and not outline_mode:
         thr0 = thresholds[0]
         if log_scale:
+            # For log scale, still need to handle thresholding
             pos_vals = cum_data_full[cum_data_full > thr0]
             if pos_vals.size == 0:
                 raise ValueError("No positive cumulative-segmentation values above threshold for log scaling.")
             norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
         else:
-            norm_overlay = Normalize(vmin=np.min(cum_data_full), vmax=np.max(cum_data_full))
+            # Use robust normalization for overlay as well
+            norm_overlay = calculate_robust_normalization(cum_data_full)
         cmap = plt.get_cmap(colormap_name)
     elif has_segmentation and outline_mode:
         contour_colors = get_contour_colors()
         num_colors = len(contour_colors)
 
     # Build the display sequence
-    # In alternate mode: Fill entire rows alternately
-    #   Row 1: slices 0-(cols-1) brain-only
-    #   Row 2: slices 0-(cols-1) with overlay
-    #   Row 3: slices cols-(2*cols-1) brain-only
-    #   Row 4: slices cols-(2*cols-1) with overlay, etc.
-    # In normal mode: [slice0, slice1, slice2, ...]
     display_sequence = []
     if alternate:
         # Group slices into chunks of 'cols' size
@@ -195,7 +192,7 @@ def create_mosaic(
                 display_sequence.append((slice_idx, True))
     else:
         for slice_idx in used_slices:
-            display_sequence.append((slice_idx, has_segmentation))  # show overlay if available
+            display_sequence.append((slice_idx, has_segmentation))
 
     # Process each display slot
     for display_idx, (slice_idx, show_overlay) in enumerate(display_sequence):
@@ -203,7 +200,7 @@ def create_mosaic(
         col_i = display_idx % cols
         
         if row_i >= rows:
-            break  # Don't exceed calculated rows
+            break
         
         y0, y1 = row_i * scaled_slice_h, (row_i + 1) * scaled_slice_h
         x0, x1 = col_i * scaled_slice_w, (col_i + 1) * scaled_slice_w

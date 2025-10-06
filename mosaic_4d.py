@@ -11,7 +11,7 @@ from PIL import Image
 from skimage.transform import resize
 
 from layout_utils import RESOLUTION_PRESETS, determine_auto_resolution
-from image_utils import get_slice, generate_lr_labels, get_orientation
+from image_utils import get_slice, generate_lr_labels, get_orientation, calculate_robust_normalization, calculate_median_excluding_background
 
 # Increase PIL's image size limit
 Image.MAX_IMAGE_PIXELS = None
