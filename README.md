@@ -6,16 +6,20 @@ Create publication-ready **mosaic images** *or* **animated GIFs** of brain slice
 ## At a Glance
 | Mode | What it does | Typical use-case |
 |------|--------------|------------------|
-| **Overlay** (default) | Renders a *single* cumulative segmentation volume as a semi-transparent colormap on top of T1/T2 anatomy. | Visualise lesion load, probabilistic maps, heat-maps, etc. |
-| **Outline** (`--outline` **or** ≥2 masks) | Draws coloured contours for one or more binary lesion masks (each above its own threshold). | Compare multiple lesion masks, multi-time-point studies, algorithm evaluation. |
+| **Brain-only** (no segmentation) | Display structural brain images in an optimal grid layout | Quick quality checks, anatomical reference images |
+| **Overlay** (single segmentation file) | Renders a cumulative segmentation volume as a semi-transparent colormap on top of T1/T2 anatomy | Visualize lesion load, probabilistic maps, heat-maps |
+| **Outline** (multiple masks **or** `--outline` flag) | Draws colored contours for one or more binary lesion masks | Compare multiple lesion masks, multi-time-point studies, algorithm evaluation |
+| **Alternating** (`--alternate` flag) | Alternates rows between brain-only and brain+overlay views | Side-by-side comparison of anatomy with and without overlay |
 
-Additional niceties:
+Additional features:
 
-* Optional **slice highlighting** (`--highlight`) – adds a red border around slices containing any lesion voxels.
-* **Flexible slice selection** – choose start/end indices and subsampling step.
-* **Customisable layout** – set number of slices per row.
-* **Animated GIFs** – auto-resized to 800 px height to keep file sizes reasonable.
-* **L/R orientation labels** – stamped automatically in every output.
+* **Smart resolution management** – Automatically optimizes output quality without upscaling, keeping native resolution where possible
+* **Adaptive sampling** – For large datasets, intelligently reduces slice count to maintain image quality and reasonable file sizes
+* **4D volume support** – Creates "super mosaics" with each timepoint/volume displayed in its own row, including intensity indicator bars
+* **Slice highlighting** (`--highlight`) – Adds a red border around slices containing lesion voxels
+* **Flexible slice selection** – Choose start/end indices and subsampling step
+* **Animated GIFs** – Auto-resized to 800px height for manageable file sizes
+* **L/R orientation labels** – Automatically stamped on every output
 
 ---
 
@@ -23,7 +27,7 @@ Additional niceties:
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/neuromontage.git
+git clone https://github.com/mdschirmer/neuromontage.git
 cd neuromontage
 
 # 2. (Recommended) create a fresh environment
@@ -33,7 +37,7 @@ source .venv/bin/activate   # Linux/macOS
 
 # 3. Install requirements
 pip install -r requirements.txt
-````
+```
 
 <details>
 <summary><strong>Minimal dependencies</strong></summary>
@@ -53,131 +57,282 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-### 1. Overlay Mode (one input file)
+### 1. Brain-only visualization
+
+```bash
+python neuromontage.py \
+  -b sub-01_T1w.nii.gz \
+  -o brain_mosaic.jpg \
+  --start_slice 10 \
+  --end_slice 50
+```
+
+### 2. Overlay Mode (single segmentation file)
 
 ```bash
 python neuromontage.py \
   -b sub-01_T1w.nii.gz \
   -s sub-01_lesion_prob.nii.gz \
-  -o sub-01_mosaic.jpg \
+  -o overlay_mosaic.jpg \
   --alpha 0.6 \
   --colormap magma \
-  --log_scale \
-  --slice_step 2 \
-  --slices_per_row 8
+  --log_scale
 ```
 
-### 2. Outline Mode (multiple masks)
+### 3. Outline Mode (multiple masks)
 
 ```bash
 python neuromontage.py \
   -b sub-01_T1w.nii.gz \
   -s acute.nii.gz chronic.nii.gz edematous.nii.gz \
-  -o outlines.gif \
-  --gif --duration 6 \
+  -o outlines.jpg \
   --threshold 0.3 0.5 0.1 \
   --highlight
+```
+
+### 4. Alternating Mode (compare with/without overlay)
+
+```bash
+python neuromontage.py \
+  -b sub-01_T1w.nii.gz \
+  -s lesion_mask.nii.gz \
+  -o comparison.jpg \
+  --alternate \
+  --alpha 0.7
+```
+
+### 5. 4D Volume Super Mosaic
+
+```bash
+python neuromontage.py \
+  -b diffusion_4d.nii.gz \
+  -o diffusion_mosaic.jpg
 ```
 
 See **more worked examples** in the [Usage Examples](#usage-examples) section.
 
 ---
 
+## Understanding Resolution Modes
+
+NeuroMontage offers intelligent resolution management to balance quality and file size:
+
+### Auto Mode (Recommended)
+```bash
+python neuromontage.py -b brain.nii.gz -o output.jpg
+# No --resolution flag needed (auto is default)
+```
+
+**What it does:**
+- Maintains native slice resolution whenever possible (no upscaling)
+- Automatically samples slices if needed to keep file size reasonable
+- Ensures output dimensions stay within 4000×4000 pixels
+- Optimizes grid layout for best use of space
+
+**When to use:** Almost always! This mode provides the best quality-to-file-size ratio.
+
+### Preset Resolutions (HD/2K/4K)
+```bash
+python neuromontage.py -b brain.nii.gz -o output.jpg --resolution 4k
+```
+
+**What it does:**
+- Forces output to specific dimensions (HD: 1920×1080, 2K: 2560×1440, 4K: 3840×2160)
+- May significantly downsample for large datasets
+- Never upscales (maintains quality)
+
+**When to use:** When you need consistent output dimensions across multiple datasets, or for presentation/publication with specific size requirements.
+
+---
+
 ## Command-line Reference
 
 ```text
-usage: neuromontage.py [-h] -b BRAIN -s SEG ... -o OUTPUT [--gif]
-                       [--duration SEC] [--outline] [--highlight]
+usage: neuromontage.py [-h] -b BRAIN [-s SEG ...] -o OUTPUT 
+                       [--resolution {auto,hd,2k,4k}] [--gif] [--duration SEC]
+                       [--outline] [--highlight] [--alternate]
                        [--slice_step N] [--start_slice I] [--end_slice I]
                        [--alpha VAL] [--colormap NAME] [--log_scale]
-                       [--threshold T [T ...]] [--slices_per_row N]
+                       [--threshold T [T ...]]
 ```
 
-| Flag                              | Meaning                                     | Default      |
-| --------------------------------- | ------------------------------------------- | ------------ |
-| `-b`, `--brain_file`              | Structural brain NIfTI (T1/T2/FLAIR)        | *required*   |
-| `-s`, `--input_files`             | One or more lesion/segmentation NIfTIs      | *required*   |
-| `-o`, `--output_file`             | Destination `.jpg` (mosaic) **or** `.gif`   | *required*   |
-| `--gif`                           | Produce an animated GIF instead of a mosaic | off          |
-| `--duration SEC`                  | Total GIF runtime in seconds                | `10.0`       |
-| `--outline`                       | Force outline mode (even with one input)    | off          |
-| `--highlight`                     | Red border around slices containing lesions | off          |
-| `--slice_step N`                  | Use every *N*th valid slice                 | `2`          |
-| `--start_slice I / --end_slice I` | Slice range (inclusive)                     | whole volume |
-| `--alpha VAL`                     | Overlay opacity (overlay mode)              | `0.7`        |
-| `--colormap NAME`                 | Any Matplotlib colormap                     | `viridis`    |
-| `--log_scale`                     | Log-scale colour mapping (overlay mode)     | off          |
-| `--threshold T [T ...]`           | Single or per-mask thresholds               | `0.0`        |
-| `--slices_per_row N`              | Layout width in mosaic                      | `8`          |
+### Required Arguments
+
+| Flag | Description |
+|------|-------------|
+| `-b`, `--brain_file` | Structural brain NIfTI (T1/T2/FLAIR, 3D or 4D) |
+| `-o`, `--output_file` | Destination `.jpg` (mosaic) **or** `.gif` (animation) |
+
+### Segmentation Arguments
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-s`, `--input_files` | One or more lesion/segmentation NIfTIs (optional, 3D only) | none |
+| `--outline` | Force outline mode (even with one input) | off |
+| `--highlight` | Red border around slices with lesions | off |
+| `--alternate` | Alternate rows: brain-only vs. brain+overlay | off |
+
+### Resolution & Layout
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--resolution` | Output size: `auto`, `hd`, `2k`, `4k` | `auto` |
+| `--slice_step N` | Use every *N*th slice | `1` |
+| `--start_slice I` | First slice index (inclusive) | `0` |
+| `--end_slice I` | Last slice index (inclusive) | all |
+
+### Overlay Appearance
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--alpha VAL` | Overlay opacity (0-1, overlay mode only) | `0.7` |
+| `--colormap NAME` | Matplotlib colormap (overlay mode only) | `viridis` |
+| `--log_scale` | Log-scale color mapping (overlay mode only) | off |
+| `--threshold T [T ...]` | Single or per-mask threshold values | `0.0` |
+
+### Animation Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--gif` | Create animated GIF (3D data only) | off |
+| `--duration SEC` | Total GIF runtime in seconds | `10.0` |
 
 ---
 
 ## Usage Examples
 
 <details>
-<summary>Click to expand full examples</summary>
+<summary>Click to expand comprehensive examples</summary>
 
 ```bash
-# (1) Single cumulative segmentation → linear overlay
+# (1) Brain-only mosaic with auto resolution
+python neuromontage.py -b brain_T1.nii.gz -o brain_mosaic.jpg
+
+# (2) Brain-only with specific slice range
+python neuromontage.py -b brain_T1.nii.gz -o brain_subset.jpg \
+  --start_slice 20 --end_slice 60 --slice_step 2
+
+# (3) Brain-only forced to 4K resolution
+python neuromontage.py -b brain_T1.nii.gz -o brain_4k.jpg --resolution 4k
+
+# (4) Single segmentation overlay with log scale
 python neuromontage.py -b brain_T1.nii.gz -s cumulative.nii.gz \
-  -o overlay.jpg --start_slice 10 --end_slice 50 --slice_step 2 \
-  --alpha 0.7 --slices_per_row 8
+  -o overlay_log.jpg --log_scale --alpha 0.6 --colormap plasma
 
-# (2) Single cumulative segmentation → log-scale overlay (thr=5)
-python neuromontage.py -b brain_T1.nii.gz -s cumulative.nii.gz \
-  -o overlay_log.jpg --log_scale --alpha 0.5 \
-  --slices_per_row 6 --threshold 5
+# (5) Multiple lesion masks with colored outlines
+python neuromontage.py -b brain_T1.nii.gz \
+  -s lesion1.nii.gz lesion2.nii.gz lesion3.nii.gz \
+  -o outlines.jpg --threshold 0.5
 
-# (3) Two masks → identical threshold, coloured outlines
-python neuromontage.py -b brain_T1.nii.gz -s lesion1.nii.gz lesion2.nii.gz \
-  -o outlines.jpg --threshold 0.5 --slices_per_row 7
+# (6) Different thresholds per mask
+python neuromontage.py -b brain_T1.nii.gz \
+  -s acute.nii.gz chronic.nii.gz \
+  -o multi_threshold.jpg --threshold 0.3 0.7
 
-# (4) Two masks → different thresholds
-python neuromontage.py -b brain_T1.nii.gz -s lesion1.nii.gz lesion2.nii.gz \
-  -o outlines_diff.jpg --threshold 0.5 1.0
-
-# (5) Force outline mode with one file
+# (7) Force outline mode with single file
 python neuromontage.py -b brain_T1.nii.gz -s mask.nii.gz \
   -o outline_single.jpg --outline
 
-# (6) Mosaic with highlighted slices
-python neuromontage.py -b brain_T1.nii.gz -s seg1.nii.gz seg2.nii.gz \
-  -o mosaic_highlight.jpg --highlight --slices_per_row 5
+# (8) Highlighted slices with segmentation
+python neuromontage.py -b brain_T1.nii.gz -s lesions.nii.gz \
+  -o highlighted.jpg --highlight --alpha 0.5
 
-# (7) Animated GIF (outline) with three masks
-python neuromontage.py -b brain_T1.nii.gz -s A.nii.gz B.nii.gz C.nii.gz \
-  -o multi_outlines.gif --gif --duration 5 --outline \
-  --highlight --threshold 0.5 1.0 0.2
+# (9) Alternating rows (brain vs. brain+overlay)
+python neuromontage.py -b brain_T1.nii.gz -s lesions.nii.gz \
+  -o alternating.jpg --alternate --colormap hot
 
-# (8) Animated GIF (overlay) with log-scale + highlight
+# (10) 4D volume super mosaic with auto resolution
+python neuromontage.py -b diffusion_4d.nii.gz -o diffusion.jpg
+
+# (11) 4D volume with forced 2K output
+python neuromontage.py -b fmri_4d.nii.gz -o fmri_2k.jpg --resolution 2k
+
+# (12) Animated GIF with multiple outlines
+python neuromontage.py -b brain_T1.nii.gz \
+  -s mask1.nii.gz mask2.nii.gz mask3.nii.gz \
+  -o animation.gif --gif --duration 6 --highlight
+
+# (13) Animated GIF with overlay and log scale
 python neuromontage.py -b brain_T1.nii.gz -s cumulative.nii.gz \
-  -o overlay_animation.gif --gif --duration 8 \
-  --alpha 0.6 --colormap plasma --log_scale \
-  --highlight --threshold 2.5
+  -o overlay_anim.gif --gif --duration 8 \
+  --alpha 0.6 --colormap magma --log_scale --highlight
 ```
 
 </details>
 
 ---
 
-## Output Samples
+## Understanding 4D Visualization
 
-| Output type      | Example                                    |
-| ---------------- | ------------------------------------------ |
-| **Mosaic JPEG**  | ![mosaic example](docs/example_mosaic.jpg) |
-| **Animated GIF** | ![gif example](docs/example_animation.gif) |
+When you provide a 4D NIfTI file (e.g., diffusion, fMRI, or multi-echo data), NeuroMontage creates a "super mosaic":
 
-*(Screenshots omitted from repository to keep size small – generate them with the sample commands above.)*
+**Layout:**
+- Each volume/timepoint gets its own horizontal row
+- All slices from that volume are arranged left-to-right
+- Rows are labeled (Vol 1, Vol 2, etc.)
+
+**Intensity Indicators:**
+- Each row has a grayscale intensity bar on the right
+- An orange horizontal line shows where that volume's median intensity falls
+- This helps you quickly identify volumes with different contrast or signal characteristics
+
+**Adaptive Sampling:**
+- For 4D data with many slices, auto mode intelligently samples to maintain quality
+- You'll see messages like "showing every 2 slice(s)" if sampling is applied
 
 ---
 
 ## Tips & Best Practices
 
-* **Large volumes** – use `--slice_step` to down-sample slices and keep mosaics manageable.
-* **Colourblind-friendly overlays** – try `--colormap magma`, `plasma`, or `cividis`.
-* **Log scale** is helpful for probability maps with long-tailed distributions.
-* **Thresholds** accept floats; integer masks often work with `--threshold 0.5`.
-* Combine **highlighting** with outlines to spot lesion-bearing slices instantly.
+### Resolution Selection
+* **Use `auto` mode** for best results in most cases – it prevents quality loss from upscaling
+* **Use preset resolutions** only when you need consistent dimensions across datasets
+* For large datasets (>100 slices), auto mode may adaptively sample – this is normal and preserves quality
+
+### Visualization Modes
+* **Brain-only mode** is great for quality control and anatomical reference
+* **Overlay mode** works best for continuous probability maps or intensity-based segmentations
+* **Outline mode** is ideal for comparing discrete lesion masks or multi-timepoint data
+* **Alternate mode** provides direct visual comparison – especially useful for presentations
+
+### Color & Contrast
+* For overlay mode, try colorblind-friendly colormaps: `magma`, `plasma`, `cividis`
+* Use `--log_scale` for probability maps with long-tailed distributions
+* Adjust `--alpha` (0.5-0.8) to balance visibility of anatomy vs. overlay
+
+### File Sizes
+* JPEG mosaics are automatically optimized (quality=95)
+* GIFs are resized to 800px height to keep file sizes manageable
+* For very large datasets, consider using `--slice_step` or letting auto mode handle sampling
+
+### Thresholds
+* Default threshold (0.0) works for most binary masks
+* For probability maps, try thresholds like 0.3-0.7 depending on your confidence level
+* You can specify different thresholds for each mask in outline mode
+
+---
+
+## Output Examples
+
+### 3D Brain-only Mosaic
+High-quality anatomical reference with automatic layout optimization.
+
+### 3D Overlay Mosaic
+Semi-transparent probability map overlaid on structural image with custom colormap.
+
+### 3D Outline Mosaic
+Multiple lesion masks shown as colored contours using colorblind-friendly palette.
+
+### 3D Alternating Mosaic
+Odd rows show brain-only, even rows show brain+overlay for direct comparison.
+
+### 4D Super Mosaic
+Each volume in its own row with intensity indicator bars showing relative signal characteristics.
+
+### Animated GIF
+Frame-by-frame visualization through all valid slices with optional highlighting.
+
+*(Full resolution examples omitted from repository to keep size small – generate them with the sample commands above.)*
 
 ---
 
@@ -190,7 +345,6 @@ Pull requests are very welcome! If you:
 3. Want to improve documentation or tests
 
 please open an issue first to discuss the change.
-Make sure `pre-commit` hooks pass (`black`, `flake8`, `isort`).
 
 ---
 
@@ -199,12 +353,12 @@ Make sure `pre-commit` hooks pass (`black`, `flake8`, `isort`).
 If this tool helped your research, please cite it:
 
 ```bibtex
-@misc{neuromontage,
-  author       = {YOUR NAME},
+@software{neuromontage,
+  author       = {Markus D. Schirmer},
   title        = {NeuroMontage: Brain Overlay & Lesion Mosaic Utility},
   year         = {2025},
-  url          = {https://github.com/YOUR_USERNAME/neuromontage},
-  version      = {1.5}
+  url          = {https://github.com/mdschirmer/neuromontage},
+  version      = {2.2}
 }
 ```
 
@@ -218,13 +372,14 @@ Distributed under the **MIT License** – see [`LICENSE`](LICENSE) for details.
 
 ## Changelog
 
+* **2.2** – Alternating mode, robust normalization, brain-only mode, improved 4D intensity indicators
+* **2.1** – Smart resolution management, adaptive sampling, 4D super mosaics
+* **2.0** – Resolution presets (HD/2K/4K), optimal layout calculation
 * **1.5** – Highlighting, GIF resize, multi-threshold support, robust L/R labels
-* **1.4** – Log-scale overlays, coloured contour palettes
+* **1.4** – Log-scale overlays, colorblind-friendly contour palettes
 * **1.3** – Animated GIF support
 * **1.2** – Slice range & subsampling, opacity control
 * **1.1** – Outline mode for ≥2 masks
 * **1.0** – Initial release (overlay mosaics)
 
 ---
-
-> *May your montages be crisp and your reviewers impressed!*
