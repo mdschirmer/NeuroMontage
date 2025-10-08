@@ -10,7 +10,8 @@ from matplotlib.colors import Normalize
 from PIL import Image
 from skimage.transform import resize
 
-from layout_utils import RESOLUTION_PRESETS, determine_auto_resolution
+from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
+                          calculate_optimal_layout)
 from image_utils import get_slice, generate_lr_labels, get_orientation, calculate_robust_normalization, calculate_median_excluding_background
 
 # Increase PIL's image size limit
@@ -35,16 +36,31 @@ def create_super_mosaic_4d(brain_file, output_file, resolution='auto'):
     n_slices_per_volume = brain_data_4d.shape[2]
     n_volumes = brain_data_4d.shape[3]
     
-    print(f"[NeuroMontage] 4D volume: {n_volumes} volumes, {n_slices_per_volume} slices each")
+    print(f"[NeuroMontage] 4D volume: {n_volumes} volumes, {n_slices_per_volume} slices each ({slice_h}x{slice_w})")
     
-    # Determine target resolution
+    # Determine target resolution and adaptive sampling
     if resolution == 'auto':
-        # Base auto-resolution on total slice count
         total_slices = n_volumes * n_slices_per_volume
-        resolution = determine_auto_resolution(total_slices)
-        print(f"[NeuroMontage] Auto-selected {resolution.upper()} resolution")
-    
-    target_width, target_height = RESOLUTION_PRESETS[resolution]
+        target_width, target_height, slice_step, actual_total_slices = \
+            calculate_auto_resolution_and_sampling(
+                total_slices,
+                slice_h=slice_h,
+                slice_w=slice_w,
+                is_4d=True,
+                n_volumes=n_volumes,
+                n_slices_per_volume=n_slices_per_volume
+            )
+        
+        # Update slice count if adaptive sampling recommended
+        if slice_step > 1:
+            n_slices_per_volume = len(range(0, n_slices_per_volume, slice_step))
+            print(f"[NeuroMontage] Using {n_slices_per_volume} slices per volume")
+        
+        print(f"[NeuroMontage] Auto resolution: {target_width}×{target_height}")
+    else:
+        slice_step = 1  # No adaptive sampling for preset resolutions
+        target_width, target_height = RESOLUTION_PRESETS[resolution]
+        print(f"[NeuroMontage] Using preset {resolution.upper()} resolution: {target_width}×{target_height}")
     
     # Intensity bar parameters
     bar_width = 20  # Fixed width in pixels
@@ -54,9 +70,21 @@ def create_super_mosaic_4d(brain_file, output_file, resolution='auto'):
     # - Width: all slices from one volume in a row + gap + bar
     # - Height: n_volumes rows
     available_width = target_width - gap - bar_width
-    scale_w = available_width / (n_slices_per_volume * slice_w)
-    scale_h = target_height / (n_volumes * slice_h)
-    scale = min(scale_w, scale_h)  # Use smaller scale to ensure everything fits
+    
+    if resolution == 'auto':
+        # For auto mode, ensure each slice has good visibility
+        # Calculate scale needed to fit
+        scale_w = available_width / (n_slices_per_volume * slice_w)
+        scale_h = target_height / (n_volumes * slice_h)
+        scale = min(scale_w, scale_h)
+        
+        # Never upscale - cap at 1.0x
+        scale = min(1.0, scale)
+    else:
+        # For preset resolutions, fit within bounds (may downscale significantly)
+        scale_w = available_width / (n_slices_per_volume * slice_w)
+        scale_h = target_height / (n_volumes * slice_h)
+        scale = min(scale_w, scale_h)
     
     # Apply uniform scale
     scaled_slice_h = int(slice_h * scale)
@@ -69,7 +97,8 @@ def create_super_mosaic_4d(brain_file, output_file, resolution='auto'):
     
     print(f"[NeuroMontage] Layout: {n_slices_per_volume} slices × {n_volumes} rows (+ intensity indicators)")
     print(f"[NeuroMontage] Output dimensions: {canvas_width}×{canvas_height} (scale: {scale:.2f}x)")
-    print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
+    if resolution != 'auto':
+        print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
     
     # Create canvas
     canvas = np.zeros((canvas_height, canvas_width), dtype=np.float32)
@@ -117,8 +146,11 @@ def create_super_mosaic_4d(brain_file, output_file, resolution='auto'):
         row_y_start = vol_idx * scaled_slice_h
         row_y_end = row_y_start + scaled_slice_h
         
-        # Process each slice in this volume
-        for slice_idx in range(n_slices_per_volume):
+        # Process each slice in this volume (with adaptive sampling if needed)
+        for slice_count, slice_idx in enumerate(range(0, brain_data_4d.shape[2], slice_step)):
+            if slice_count >= n_slices_per_volume:
+                break
+            
             # Get slice
             image_slice = get_slice(volume_data, slice_idx)
             
@@ -136,7 +168,7 @@ def create_super_mosaic_4d(brain_file, output_file, resolution='auto'):
             image_slice_norm = vol_norm(image_slice)
             
             # Calculate column position for this slice
-            col_x_start = slice_idx * scaled_slice_w
+            col_x_start = slice_count * scaled_slice_w
             col_x_end = col_x_start + scaled_slice_w
             
             # Place slice on canvas

@@ -9,7 +9,8 @@ from matplotlib.colors import LogNorm
 from PIL import Image
 from skimage.transform import resize
 
-from layout_utils import RESOLUTION_PRESETS, determine_auto_resolution, calculate_optimal_layout
+from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
+                          calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, calculate_robust_normalization)
 
@@ -110,11 +111,13 @@ def create_mosaic(
         idx for idx in range(start_slice, end_slice + 1)
         if np.any(brain_data_full[:, :, idx] > 0)
     ]
+    
+    # Apply user-specified slice_step first
     used_slices = valid_slices[::slice_step]
     if not used_slices:
         raise ValueError(f"No non-zero slices found between indices {start_slice} and {end_slice}.")
 
-    # Get slice dimensions
+    # Get slice dimensions for resolution calculation
     example_slice = get_slice(brain_data_full, used_slices[0])
     slice_h, slice_w = example_slice.shape
     
@@ -125,12 +128,29 @@ def create_mosaic(
     else:
         display_count = len(used_slices)
     
-    # Determine resolution
+    # Determine resolution and check if adaptive sampling needed
     if resolution == 'auto':
-        resolution = determine_auto_resolution(display_count)
-        print(f"[NeuroMontage] Auto-selected {resolution.upper()} resolution for {display_count} display slots")
-    
-    target_width, target_height = RESOLUTION_PRESETS[resolution]
+        target_width, target_height, adaptive_step, final_display_count = \
+            calculate_auto_resolution_and_sampling(
+                display_count, 
+                slice_h=slice_h, 
+                slice_w=slice_w,
+                is_4d=False
+            )
+        
+        # Apply adaptive sampling if recommended
+        if adaptive_step > 1:
+            used_slices = used_slices[::adaptive_step]
+            if alternate:
+                display_count = len(used_slices) * 2
+            else:
+                display_count = len(used_slices)
+            print(f"[NeuroMontage] Final display count: {display_count} ({slice_h}x{slice_w} slices)")
+        
+        print(f"[NeuroMontage] Auto resolution: {target_width}×{target_height}")
+    else:
+        target_width, target_height = RESOLUTION_PRESETS[resolution]
+        print(f"[NeuroMontage] Using preset {resolution.upper()} resolution: {target_width}×{target_height}")
     
     # Calculate optimal layout based on display count
     cols, rows, scale, actual_width, actual_height = calculate_optimal_layout(
@@ -139,7 +159,8 @@ def create_mosaic(
     
     print(f"[NeuroMontage] Layout: {cols}×{rows} grid")
     print(f"[NeuroMontage] Output dimensions: {actual_width}×{actual_height} (scale: {scale:.2f}x)")
-    print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
+    if resolution != 'auto':
+        print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
     
     # Apply uniform scale to slice dimensions
     scaled_slice_h = int(slice_h * scale)
@@ -211,7 +232,7 @@ def create_mosaic(
         
         if scale != 1.0:
             base_slice_scaled = resize(base_slice_norm, (scaled_slice_h, scaled_slice_w), 
-                                      order=0, anti_aliasing=False, preserve_range=True)
+                                      order=1, anti_aliasing=True, preserve_range=True)
         else:
             base_slice_scaled = base_slice_norm
         
@@ -320,8 +341,15 @@ def create_mosaic(
     scaled_r_h = int(right_label.shape[0] * label_scale)
     scaled_r_w = int(right_label.shape[1] * label_scale)
     
-    left_label_scaled = resize(left_label, (scaled_l_h, scaled_l_w), order=0, anti_aliasing=False, preserve_range=True)
-    right_label_scaled = resize(right_label, (scaled_r_h, scaled_r_w), order=0, anti_aliasing=False, preserve_range=True)
+    if scaled_l_h > 0 and scaled_l_w > 0:
+        left_label_scaled = resize(left_label, (scaled_l_h, scaled_l_w), order=0, anti_aliasing=False, preserve_range=True)
+    else:
+        left_label_scaled = left_label
+        
+    if scaled_r_h > 0 and scaled_r_w > 0:
+        right_label_scaled = resize(right_label, (scaled_r_h, scaled_r_w), order=0, anti_aliasing=False, preserve_range=True)
+    else:
+        right_label_scaled = right_label
     
     if orientation == 'L-R':
         if pad + scaled_l_h < canvas_h and pad + scaled_l_w < canvas_w:
