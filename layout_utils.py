@@ -202,12 +202,20 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         actual_width = int(cols * slice_w * scale)
         actual_height = int(rows * slice_h * scale)
         
+        # Ensure positive dimensions
+        if actual_width <= 0 or actual_height <= 0:
+            continue
+        
         # Score based on resolution utilization and aspect ratio match
         area_utilization = (actual_width * actual_height) / (target_width * target_height)
-        aspect_match = 1 - abs((actual_width/actual_height) - target_aspect) / target_aspect
+        
+        # Use absolute difference for aspect match to avoid negative values
+        aspect_diff = abs((actual_width / actual_height) - target_aspect)
+        aspect_match = 1.0 / (1.0 + aspect_diff / target_aspect)  # Always positive, max = 1.0
         
         # Prefer layouts that fill more of the target area and match aspect ratio
-        score = (area_utilization ** 1.5) * (aspect_match ** 0.8)
+        # Use abs() and clamp to ensure positive values before exponentiation
+        score = (max(0.0, area_utilization) ** 1.5) * (max(0.0, aspect_match) ** 0.8)
         
         # Slight preference for more square-ish grid arrangements
         squareness = 1 - abs(rows - cols) / max(rows, cols)
