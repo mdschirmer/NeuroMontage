@@ -151,7 +151,7 @@ python neuromontage.py -b brain.nii.gz -o output.jpg --resolution 4k
 usage: neuromontage.py [-h] -b BRAIN [-s SEG ...] -o OUTPUT 
                        [--resolution {auto,hd,2k,4k}] [--gif] [--duration SEC]
                        [--outline] [--highlight] [--alternate]
-                       [--slice_step N] [--start_slice I] [--end_slice I]
+                       [--rows N] [--slice_step N] [--start_slice I] [--end_slice I]
                        [--alpha VAL] [--colormap NAME] [--log_scale]
                        [--threshold T [T ...]]
 ```
@@ -177,6 +177,7 @@ usage: neuromontage.py [-h] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--resolution` | Output size: `auto`, `hd`, `2k`, `4k` | `auto` |
+| `--rows N` | Fixed row count for 3D mosaics (columns derived; must be even with `--alternate`, odd values round down) | automatic |
 | `--slice_step N` | Use every *N*th slice | `1` |
 | `--start_slice I` | First slice index (inclusive) | `0` |
 | `--end_slice I` | Last slice index (inclusive) | all |
@@ -358,7 +359,7 @@ If this tool helped your research, please cite it:
   title        = {NeuroMontage: Brain Overlay & Lesion Mosaic Utility},
   year         = {2025},
   url          = {https://github.com/mdschirmer/neuromontage},
-  version      = {2.2}
+  version      = {2.3.0.0}
 }
 ```
 
@@ -372,6 +373,7 @@ Distributed under the **MIT License** – see [`LICENSE`](LICENSE) for details.
 
 ## Changelog
 
+* **2.3.0.0** – Segmentation overlays for 4D images, per-mask line styles, 16:9 layouts, `--rows`, robust NIfTI loading, alternate-mode last-row fix. Versions now use four numbers (MAJOR.FEATURE.TESTED.ITERATION)
 * **2.2** – Alternating mode, robust normalization, brain-only mode, improved 4D intensity indicators
 * **2.1** – Smart resolution management, adaptive sampling, 4D super mosaics
 * **2.0** – Resolution presets (HD/2K/4K), optimal layout calculation

@@ -12,9 +12,11 @@ RESOLUTION_PRESETS = {
 }
 
 # Practical limits for output dimensions
-MAX_WIDTH = 4000   # Maximum width in pixels
-MAX_HEIGHT = 4000  # Maximum height in pixels
-MIN_SLICE_SIZE = 100  # Minimum acceptable size for smaller dimension (triggers sampling)
+# 3D: constrain to 4K display (3840×2160)
+# 4D: constrain width, but let height grow (one row per volume)
+MAX_WIDTH = 3840   # Maximum width in pixels
+MAX_HEIGHT_3D = 2160  # Maximum height for 3D mosaics
+MIN_SLICE_SIZE = 100  # Minimum slice dimension (both 3D and 4D)
 
 
 def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=False,
@@ -84,60 +86,82 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
                 required_width = MAX_WIDTH
                 print(f"[NeuroMontage] Downscaling to {target_scale:.2f}x to fit width")
         
-        # Check height constraint
-        if required_height > MAX_HEIGHT:
-            # Reduce scale to fit height
-            scale_reduction = MAX_HEIGHT / required_height
-            target_scale *= scale_reduction
-            required_width = int(required_width * scale_reduction)
-            required_height = MAX_HEIGHT
-            print(f"[NeuroMontage] Height constraint: reduced scale to {target_scale:.2f}x")
+        # Check height constraint - ensure each slice is at least MIN_SLICE_SIZE tall
+        scaled_slice_h = slice_h * target_scale
+        if scaled_slice_h < MIN_SLICE_SIZE:
+            # Scale up to meet minimum slice height
+            target_scale = MIN_SLICE_SIZE / slice_h
+            required_width = int(n_slices_per_volume * slice_w * target_scale)
+            required_height = int(n_volumes * slice_h * target_scale)
+            print(f"[NeuroMontage] Ensuring minimum slice height ({MIN_SLICE_SIZE}px): scale {target_scale:.2f}x")
+        else:
+            required_height = int(n_volumes * slice_h * target_scale)
         
         target_width = int(required_width)
         target_height = int(required_height)
         
     else:
-        # 3D layout: flexible grid arrangement
-        # Estimate grid dimensions (roughly square layout)
-        aspect_ratio = slice_w / slice_h
-        cols_estimate = int(np.sqrt(n_slices * aspect_ratio) * 1.2)
-        rows_estimate = int(np.ceil(n_slices / cols_estimate))
+        # 3D layout: target 16:9 aspect ratio output
+        TARGET_ASPECT = 16 / 9  # ~1.78
         
-        required_width = cols_estimate * slice_w * target_scale
-        required_height = rows_estimate * slice_h * target_scale
+        # Calculate max slices that fit at native scale
+        max_cols = int(MAX_WIDTH / slice_w)
+        max_rows = int(MAX_HEIGHT_3D / slice_h)
+        max_slices_at_native = max_cols * max_rows
         
-        # Check if we exceed limits
-        exceeds_width = required_width > MAX_WIDTH
-        exceeds_height = required_height > MAX_HEIGHT
-        
-        if exceeds_width or exceeds_height:
-            # Calculate how many slices we can fit at target quality
-            max_slices_width = int((MAX_WIDTH / (slice_w * target_scale)) ** 2 / aspect_ratio)
-            max_slices_height = int((MAX_HEIGHT / (slice_h * target_scale)) ** 2 * aspect_ratio)
-            max_slices_at_target = min(max_slices_width, max_slices_height)
+        if n_slices > max_slices_at_native:
+            # Need to sample slices
+            recommended_step = int(np.ceil(n_slices / max_slices_at_native))
+            actual_n_slices = len(range(0, n_slices, recommended_step))
             
-            if n_slices > max_slices_at_target:
-                # Need to sample slices
-                recommended_step = int(np.ceil(n_slices / max_slices_at_target))
-                actual_n_slices = len(range(0, n_slices, recommended_step))
-                
-                print(f"[NeuroMontage] Dimension constraint: showing every {recommended_step} slice(s)")
-                print(f"[NeuroMontage] Reduced from {n_slices} to {actual_n_slices} slices")
-                
-                # Recalculate with reduced slice count
-                cols_estimate = int(np.sqrt(actual_n_slices * aspect_ratio) * 1.2)
-                rows_estimate = int(np.ceil(actual_n_slices / cols_estimate))
-                required_width = cols_estimate * slice_w * target_scale
-                required_height = rows_estimate * slice_h * target_scale
+            print(f"[NeuroMontage] Dimension constraint: showing every {recommended_step} slice(s)")
+            print(f"[NeuroMontage] Reduced from {n_slices} to {actual_n_slices} slices")
+        else:
+            actual_n_slices = n_slices
+        
+        # Find layout closest to 16:9 aspect ratio
+        best_cols = None
+        best_rows = None
+        best_aspect_diff = float('inf')
+        
+        for cols in range(1, actual_n_slices + 1):
+            rows = int(np.ceil(actual_n_slices / cols))
+            
+            # Check if it fits
+            width_needed = cols * slice_w
+            height_needed = rows * slice_h
+            
+            if width_needed > MAX_WIDTH or height_needed > MAX_HEIGHT_3D:
+                continue
+            
+            # Calculate output aspect ratio
+            output_aspect = width_needed / height_needed
+            aspect_diff = abs(output_aspect - TARGET_ASPECT)
+            
+            if aspect_diff < best_aspect_diff:
+                best_aspect_diff = aspect_diff
+                best_cols = cols
+                best_rows = rows
+        
+        if best_cols is None:
+            # Fallback: use max that fits
+            best_cols = max_cols
+            best_rows = int(np.ceil(actual_n_slices / best_cols))
+        
+        cols_estimate = best_cols
+        rows_estimate = best_rows
+        required_width = cols_estimate * slice_w
+        required_height = rows_estimate * slice_h
         
         # Final bounds check - reduce scale if still too large
-        if required_width > MAX_WIDTH or required_height > MAX_HEIGHT:
+        if required_width > MAX_WIDTH or required_height > MAX_HEIGHT_3D:
             scale_w = MAX_WIDTH / required_width if required_width > MAX_WIDTH else 1.0
-            scale_h = MAX_HEIGHT / required_height if required_height > MAX_HEIGHT else 1.0
+            scale_h = MAX_HEIGHT_3D / required_height if required_height > MAX_HEIGHT_3D else 1.0
             scale_reduction = min(scale_w, scale_h)
             required_width = int(required_width * scale_reduction)
             required_height = int(required_height * scale_reduction)
-            print(f"[NeuroMontage] Final scale adjustment: {target_scale * scale_reduction:.2f}x")
+            target_scale = scale_reduction
+            print(f"[NeuroMontage] Scaling to fit: {target_scale:.2f}x")
         
         target_width = int(required_width)
         target_height = int(required_height)
@@ -149,12 +173,12 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
     return (target_width, target_height, recommended_step, actual_n_slices)
 
 
-def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_height, 
-                            min_slice_pixels=100, max_slice_pixels=None):
+def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_height,
+                            min_slice_pixels=100, max_slice_pixels=None, force_rows=None):
     """
     Calculate optimal grid layout to best fit target resolution.
     Uses uniform scaling to preserve slice aspect ratios.
-    
+
     Args:
         n_slices: Number of slices to arrange
         slice_h: Height of each slice
@@ -163,10 +187,25 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         target_height: Target output height
         min_slice_pixels: Minimum size for each slice in pixels
         max_slice_pixels: Maximum size for each slice in pixels (None = no limit)
-    
+        force_rows: If set, use exactly this row count and skip the layout search
+
     Returns:
         tuple: (columns, rows, scale_factor, actual_width, actual_height)
     """
+    if force_rows is not None:
+        # The user selects the row count. Derive the column count from it.
+        rows = max(1, min(force_rows, n_slices))
+        cols = int(np.ceil(n_slices / rows))
+        # Remove empty trailing rows if the slice count does not divide evenly.
+        rows = int(np.ceil(n_slices / cols))
+        # Scale down to fit the target dimensions. Do not upscale.
+        scale = min(target_width / (cols * slice_w),
+                    target_height / (rows * slice_h),
+                    1.0)
+        actual_width = int(cols * slice_w * scale)
+        actual_height = int(rows * slice_h * scale)
+        return (cols, rows, scale, actual_width, actual_height)
+
     if target_width is None or target_height is None:
         target_width = slice_w * int(np.sqrt(n_slices) * 1.5)
         target_height = slice_h * int(np.sqrt(n_slices) * 1.5)

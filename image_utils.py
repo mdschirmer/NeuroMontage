@@ -3,9 +3,137 @@ Image processing utilities for NeuroMontage.
 """
 
 import numpy as np
+import nibabel as nib
 import skimage.measure
 from matplotlib.colors import Normalize
 from skimage.transform import resize
+
+
+def load_nifti_robust(filepath):
+    """
+    Load a NIfTI file with robust error handling for unusual data types.
+    
+    Handles edge cases including:
+    - Files with void/structured dtypes (RGB, complex data)
+    - Files with unusual bit depths
+    - Corrupted or non-standard headers
+    
+    Args:
+        filepath: Path to the NIfTI file
+    
+    Returns:
+        tuple: (nibabel image object, numpy array of image data)
+    
+    Raises:
+        ValueError: If the file cannot be loaded after all fallback attempts
+    """
+    nii = nib.load(filepath)
+    header = nii.header
+    
+    # Get info for diagnostics
+    raw_dtype = header.get_data_dtype()
+    shape = header.get_data_shape()
+    
+    # First attempt: standard get_fdata()
+    try:
+        data = nii.get_fdata()
+        return nii, data
+    except TypeError as e:
+        if 'void' in str(e) or 'DType' in str(e):
+            print(f"[NeuroMontage] Warning: Non-standard data type ({raw_dtype}) in {filepath}")
+            print(f"[NeuroMontage] Attempting fallback loading methods...")
+        else:
+            raise
+    
+    # Second attempt: try loading raw data and converting
+    try:
+        dataobj = nii.dataobj
+        
+        # Check for structured/compound dtypes
+        if hasattr(raw_dtype, 'subdtype') and raw_dtype.subdtype is not None:
+            base_dtype, sub_shape = raw_dtype.subdtype
+            print(f"[NeuroMontage] Structured dtype: base={base_dtype}, shape={sub_shape}")
+            raw_data = np.asarray(dataobj)
+            if raw_data.dtype.names:
+                first_field = raw_data.dtype.names[0]
+                data = raw_data[first_field].astype(np.float64)
+            else:
+                data = raw_data.view(base_dtype).astype(np.float64)
+            print(f"[NeuroMontage] Successfully loaded with structured dtype handling")
+            return nii, data
+        
+        # Try to interpret void dtype
+        raw_data = np.asarray(dataobj)
+        if raw_data.dtype == np.dtype('void') or str(raw_data.dtype).startswith('V'):
+            nbytes = raw_data.nbytes
+            expected_elements = np.prod(shape) if shape else 1
+            bytes_per_element = nbytes // expected_elements if expected_elements > 0 else 1
+            
+            print(f"[NeuroMontage] Void dtype with {bytes_per_element} bytes/voxel")
+            
+            if bytes_per_element == 1:
+                data = raw_data.view(np.uint8).reshape(shape).astype(np.float64)
+            elif bytes_per_element == 2:
+                data = raw_data.view(np.uint16).reshape(shape).astype(np.float64)
+            elif bytes_per_element == 3:
+                # RGB data
+                rgb_data = raw_data.view(np.uint8).reshape(shape + (3,))
+                data = np.mean(rgb_data, axis=-1)
+                print("[NeuroMontage] Converted RGB data to grayscale")
+            elif bytes_per_element == 4:
+                try:
+                    data = raw_data.view(np.float32).reshape(shape).astype(np.float64)
+                except ValueError:
+                    rgba_data = raw_data.view(np.uint8).reshape(shape + (4,))
+                    data = np.mean(rgba_data[..., :3], axis=-1)
+                    print("[NeuroMontage] Converted RGBA data to grayscale")
+            elif bytes_per_element == 8:
+                data = raw_data.view(np.float64).reshape(shape)
+            else:
+                raise ValueError(f"Cannot interpret void dtype with {bytes_per_element} bytes/voxel")
+            
+            print(f"[NeuroMontage] Successfully loaded via void dtype interpretation")
+            return nii, data
+        
+        # Non-void but problematic - try direct conversion
+        data = raw_data.astype(np.float64)
+        print(f"[NeuroMontage] Successfully loaded via direct dtype conversion")
+        return nii, data
+            
+    except Exception as e2:
+        print(f"[NeuroMontage] Fallback method 1 failed: {e2}")
+    
+    # Third attempt: force loading with explicit float64
+    try:
+        data = np.asanyarray(nii.dataobj, dtype=np.float64)
+        print(f"[NeuroMontage] Successfully loaded via explicit float64 conversion")
+        return nii, data
+    except Exception as e3:
+        print(f"[NeuroMontage] Fallback method 2 failed: {e3}")
+    
+    # Fourth attempt: try Nifti1Image explicitly
+    try:
+        nii = nib.Nifti1Image.from_filename(filepath)
+        data = np.asarray(nii.dataobj).astype(np.float64)
+        print(f"[NeuroMontage] Successfully loaded via Nifti1Image")
+        return nii, data
+    except Exception as e4:
+        print(f"[NeuroMontage] Fallback method 3 failed: {e4}")
+    
+    # If all else fails, give a detailed error message
+    bitpix = header.get('bitpix', 'unknown') if hasattr(header, 'get') else 'unknown'
+    raise ValueError(
+        f"[NeuroMontage] Cannot load {filepath}. Unsupported data type.\n"
+        f"Header info:\n"
+        f"  - Data type: {raw_dtype}\n"
+        f"  - Shape: {shape}\n"
+        f"  - Bits per voxel: {bitpix}\n"
+        f"Possible causes:\n"
+        f"  - RGB or RGBA encoded image\n"
+        f"  - Complex-valued data\n"
+        f"  - Corrupted file or non-standard format\n"
+        f"Try converting with: fslmaths {filepath} -odt float output.nii.gz"
+    )
 
 
 def get_slice(img_data, idx):
@@ -82,6 +210,52 @@ def get_contour_colors():
         np.array([204, 121, 167], dtype=np.uint8),  # reddish purple
         np.array([0, 0, 0], dtype=np.uint8),        # black
     ]
+
+
+def get_line_pattern(mask_index):
+    """
+    Return line pattern for a given mask index.
+    
+    Different masks get different line styles (solid, dashed, dotted) so 
+    overlapping contours are all visible. Draw order matters: solid first 
+    (bottom), then dashed, then dotted on top.
+    
+    Args:
+        mask_index: Index of the segmentation mask (0, 1, 2, ...)
+    
+    Returns:
+        tuple: (pattern_length, on_length) defining the dash pattern
+               - solid: (1, 1) - all pixels drawn
+               - dashed: (5, 3) - 3 on, 2 off (60% visible)
+               - dotted: (3, 2) - 2 on, 1 off (67% visible)
+    """
+    patterns = [
+        (1, 1),   # Mask 0: solid (draw every pixel)
+        (5, 3),   # Mask 1: dashed (3 on, 2 off)
+        (3, 2),   # Mask 2: dotted (2 on, 1 off)
+        (7, 4),   # Mask 3: long dash (4 on, 3 off)
+        (4, 2),   # Mask 4: short dash (2 on, 2 off)
+        (9, 5),   # Mask 5: very long dash
+        (6, 4),   # Mask 6: medium dash
+        (4, 3),   # Mask 7: dense dash
+    ]
+    return patterns[mask_index % len(patterns)]
+
+
+def should_draw_pixel(contour_index, mask_index):
+    """
+    Determine if a pixel should be drawn based on its position along the contour
+    and the mask's line pattern.
+    
+    Args:
+        contour_index: Index of this point along the contour (0, 1, 2, ...)
+        mask_index: Index of the segmentation mask
+    
+    Returns:
+        bool: True if this pixel should be drawn
+    """
+    pattern_length, on_length = get_line_pattern(mask_index)
+    return (contour_index % pattern_length) < on_length
 
 
 def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percentile=99.99):

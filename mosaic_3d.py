@@ -9,10 +9,12 @@ from matplotlib.colors import LogNorm
 from PIL import Image
 from skimage.transform import resize
 
-from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
+from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D,
+                          calculate_auto_resolution_and_sampling,
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, calculate_robust_normalization)
+                         get_orientation, get_contour_colors, should_draw_pixel,
+                         calculate_robust_normalization, load_nifti_robust)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -32,7 +34,8 @@ def create_mosaic(
     end_slice=None,
     outline=False,
     highlight=False,
-    alternate=False
+    alternate=False,
+    rows=None
 ):
     """
     Build and save a single mosaic (JPEG) with resolution-based layout.
@@ -44,9 +47,8 @@ def create_mosaic(
         Example: Row 1 = slices 1-6 (brain), Row 2 = slices 1-6 (brain+overlay),
                  Row 3 = slices 7-12 (brain), Row 4 = slices 7-12 (brain+overlay), etc.
     """
-    # Load brain data
-    brain_nii = nib.load(brain_file)
-    brain_data_full = brain_nii.get_fdata()
+    # Load brain data with robust error handling
+    brain_nii, brain_data_full = load_nifti_robust(brain_file)
     
     # Validate 3D data
     if len(brain_data_full.shape) != 3:
@@ -73,15 +75,13 @@ def create_mosaic(
             raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
 
         if not outline_mode:
-            cum_nii = nib.load(input_files[0])
-            cum_data_full = cum_nii.get_fdata()
+            _, cum_data_full = load_nifti_robust(input_files[0])
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
         else:
             all_masks = []
             for seg_path in input_files:
-                seg_nii = nib.load(seg_path)
-                seg_data = seg_nii.get_fdata()
+                _, seg_data = load_nifti_robust(seg_path)
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape than the structural volume.")
                 all_masks.append(seg_data)
@@ -152,11 +152,45 @@ def create_mosaic(
         target_width, target_height = RESOLUTION_PRESETS[resolution]
         print(f"[NeuroMontage] Using preset {resolution.upper()} resolution: {target_width}×{target_height}")
     
+    # Translate the user row count into a forced layout row count
+    force_rows = None
+    if rows is not None:
+        if alternate:
+            # Alternate mode emits row pairs. Round an odd request down.
+            pairs = rows // 2
+            if rows % 2 != 0:
+                print(f"[NeuroMontage] Warning: --rows must be even in alternate mode. Rounding down to {2 * pairs}.")
+            if pairs < 1:
+                print("[NeuroMontage] Warning: alternate mode needs at least 2 rows. Using 2 rows.")
+                pairs = 1
+            if pairs > len(used_slices):
+                pairs = len(used_slices)
+                print(f"[NeuroMontage] Warning: --rows exceeds slice count. Using {2 * pairs} rows.")
+            force_rows = 2 * pairs
+        else:
+            force_rows = min(rows, display_count)
+            if force_rows < rows:
+                print(f"[NeuroMontage] Warning: --rows ({rows}) exceeds slice count. Using {force_rows} rows.")
+        if resolution == 'auto':
+            # Bound the forced layout by the maximum canvas, not the auto layout target.
+            target_width, target_height = MAX_WIDTH, MAX_HEIGHT_3D
+
     # Calculate optimal layout based on display count
     cols, rows, scale, actual_width, actual_height = calculate_optimal_layout(
-        display_count, slice_h, slice_w, target_width, target_height
+        display_count, slice_h, slice_w, target_width, target_height,
+        force_rows=force_rows
     )
-    
+
+    # In alternate mode the rendering emits 2 rows per chunk of `cols` slices
+    # (brain-only + brain+overlay), so the true row count is 2*ceil(N/cols),
+    # not ceil(2N/cols). Correct rows/canvas to match — otherwise the last
+    # overlay row gets clipped when N is not divisible by cols.
+    if alternate:
+        corrected_rows = 2 * int(np.ceil(len(used_slices) / cols))
+        if corrected_rows != rows:
+            rows = corrected_rows
+            actual_height = int(rows * slice_h * scale)
+
     print(f"[NeuroMontage] Layout: {cols}×{rows} grid")
     print(f"[NeuroMontage] Output dimensions: {actual_width}×{actual_height} (scale: {scale:.2f}x)")
     if resolution != 'auto':
@@ -196,29 +230,32 @@ def create_mosaic(
         contour_colors = get_contour_colors()
         num_colors = len(contour_colors)
 
-    # Build the display sequence
+    # Build the display sequence with explicit row/column positions
     display_sequence = []
     if alternate:
-        # Group slices into chunks of 'cols' size
+        current_row = 0
         for chunk_start in range(0, len(used_slices), cols):
             chunk_end = min(chunk_start + cols, len(used_slices))
             chunk_slices = used_slices[chunk_start:chunk_end]
             
             # First row: brain-only for this chunk
-            for slice_idx in chunk_slices:
-                display_sequence.append((slice_idx, False))
+            for col_idx, slice_idx in enumerate(chunk_slices):
+                display_sequence.append((slice_idx, False, current_row, col_idx))
+            current_row += 1
             
             # Second row: brain+overlay for this chunk
-            for slice_idx in chunk_slices:
-                display_sequence.append((slice_idx, True))
+            for col_idx, slice_idx in enumerate(chunk_slices):
+                display_sequence.append((slice_idx, True, current_row, col_idx))
+            current_row += 1
     else:
-        for slice_idx in used_slices:
-            display_sequence.append((slice_idx, has_segmentation))
+        for display_idx, slice_idx in enumerate(used_slices):
+            row_i = display_idx // cols
+            col_i = display_idx % cols
+            display_sequence.append((slice_idx, has_segmentation, row_i, col_i))
 
     # Process each display slot
-    for display_idx, (slice_idx, show_overlay) in enumerate(display_sequence):
-        row_i = display_idx // cols
-        col_i = display_idx % cols
+    for entry in display_sequence:
+        slice_idx, show_overlay, row_i, col_i = entry
         
         if row_i >= rows:
             break
@@ -256,7 +293,7 @@ def create_mosaic(
                 alpha_mask[y0:y1, x0:x1] = mask_vals
 
             else:
-                # Outline mode
+                # Outline mode - draw masks in order (solid first, dashed, dotted on top)
                 for m_i, mask_vol in enumerate(all_masks):
                     seg_slice = get_slice(mask_vol, slice_idx)
                     thr_i = thresholds[m_i]
@@ -272,11 +309,18 @@ def create_mosaic(
                     color = contour_colors[m_i % num_colors]
 
                     for contour in contours:
-                        for (r, c) in contour:
+                        for pt_idx, (r, c) in enumerate(contour):
+                            if not should_draw_pixel(pt_idx, m_i):
+                                continue
                             rr = int(round(r))
                             cc = int(round(c))
-                            if 0 <= rr < scaled_slice_h and 0 <= cc < scaled_slice_w:
-                                outline_canvas[y0 + rr, x0 + cc, :] = color
+                            # Draw 2-pixel thick line to survive JPEG compression
+                            for dr in (0, 1):
+                                for dc in (0, 1):
+                                    rrr = rr + dr
+                                    ccc = cc + dc
+                                    if 0 <= rrr < scaled_slice_h and 0 <= ccc < scaled_slice_w:
+                                        outline_canvas[y0 + rrr, x0 + ccc, :] = color
 
     # Build final composite
     if has_segmentation and not outline_mode:
@@ -299,8 +343,10 @@ def create_mosaic(
         red_border = np.array([255, 0, 0], dtype=np.uint8)
         border_width = max(2, int(scale * 2))
         
-        for display_idx, (slice_idx, show_overlay) in enumerate(display_sequence):
-            if display_idx // cols >= rows:
+        for entry in display_sequence:
+            slice_idx, show_overlay, row_i, col_i = entry
+            
+            if row_i >= rows:
                 break
             
             # Only highlight slices that show overlay
@@ -320,8 +366,6 @@ def create_mosaic(
                         break
 
             if has_seg:
-                row_i = display_idx // cols
-                col_i = display_idx % cols
                 y0, y1 = row_i * scaled_slice_h, (row_i + 1) * scaled_slice_h
                 x0, x1 = col_i * scaled_slice_w, (col_i + 1) * scaled_slice_w
                 
@@ -372,7 +416,10 @@ def create_mosaic(
                 np.maximum(composite_uint8[pad:pad + scaled_l_h, -pad - scaled_l_w:-pad if pad > 0 else None, :],
                           left_label_scaled[..., None] * 0.9)
 
-    # Save
+    # Save - use format based on extension
     final_image = Image.fromarray(composite_uint8)
-    final_image.save(output_file, format='JPEG', quality=95)
+    if output_file.lower().endswith('.png'):
+        final_image.save(output_file, format='PNG')
+    else:
+        final_image.save(output_file, format='JPEG', quality=95)
     print(f"[NeuroMontage] Mosaic saved to {output_file}")

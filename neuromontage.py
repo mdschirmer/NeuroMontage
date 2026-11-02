@@ -15,8 +15,8 @@ Features:
     MDS
     MGH / Harvard Medical School
 
-:Version: 2.2
-:Date: 2025-10-08
+:Version: 2.3.0.0
+:Date: 2026-11-02
 :License: MIT
 
 :Usage Examples:
@@ -30,6 +30,9 @@ Features:
   # 4D volume super mosaic with adaptive sampling
   python3 neuromontage.py -b diffusion_4d.nii.gz -o diffusion_super_mosaic.jpg
 
+  # 4D volume with segmentation overlay
+  python3 neuromontage.py -b diffusion_4d.nii.gz -s lesion_mask.nii.gz -o diffusion_overlay.jpg --alpha 0.7
+
   # Single segmentation with overlay
   python3 neuromontage.py -b brain_T1.nii.gz -s cumulative_segmentation.nii.gz -o mosaic_overlay.jpg --alpha 0.7
 
@@ -40,8 +43,8 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.2"
-__date__ = "2025-10-08"
+__version__ = "2.3.0.0"
+__date__ = "2026-11-02"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
@@ -51,6 +54,7 @@ import nibabel as nib
 from mosaic_3d import create_mosaic
 from mosaic_4d import create_super_mosaic_4d
 from gif_builder import create_gif
+from image_utils import load_nifti_robust
 
 
 def parse_args():
@@ -65,10 +69,11 @@ def parse_args():
     parser.add_argument(
         '-s', '--input_files', type=str, nargs='+', required=False, default=None,
         help=(
-            'Optional: One or more lesion/segmentation NIfTI files (only for 3D brain files). '
+            'Optional: One or more lesion/segmentation NIfTI files. '
             '• If not provided, creates a brain-only visualization. '
             '• If exactly 1 file is provided and --outline is not set, it is used as a colormap overlay. '
-            '• Otherwise, each input is treated as a lesion mask with colored contour outlines.'
+            '• Otherwise, each input is treated as a lesion mask with colored contour outlines. '
+            '• For 4D brain data: 3D segmentation applies to all volumes; 4D segmentation provides per-volume masks.'
         )
     )
     parser.add_argument(
@@ -117,6 +122,14 @@ def parse_args():
         )
     )
     parser.add_argument(
+        '--rows', type=int, default=None,
+        help=(
+            'Fixed number of rows in the mosaic grid (columns are derived automatically). '
+            'In --alternate mode the value must be even; odd values are rounded down. '
+            'Only for 3D mosaics. Default: automatic layout.'
+        )
+    )
+    parser.add_argument(
         '--start_slice', type=int, default=None,
         help='First slice index (inclusive). Default=0. Only for 3D data.'
     )
@@ -153,11 +166,20 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Load brain data to check dimensionality
-    brain_nii = nib.load(args.brain_file)
-    brain_data_full = brain_nii.get_fdata()
+    # Load brain data to check dimensionality (with robust error handling)
+    try:
+        brain_nii, brain_data_full = load_nifti_robust(args.brain_file)
+    except ValueError as e:
+        print(str(e))
+        return 1
+    except Exception as e:
+        print(f"[NeuroMontage] Error loading {args.brain_file}: {e}")
+        return 1
 
     # Route to appropriate handler
+    if args.rows is not None and (args.gif or len(brain_data_full.shape) == 4):
+        print("[NeuroMontage] Warning: --rows only applies to 3D mosaics. Ignoring --rows.")
+
     if args.gif:
         if len(brain_data_full.shape) == 4:
             raise ValueError("[NeuroMontage] GIF creation not supported for 4D data. Use mosaic mode instead.")
@@ -177,15 +199,22 @@ def main():
         )
     else:
         if len(brain_data_full.shape) == 4:
-            if args.input_files is not None and len(args.input_files) > 0:
-                print("[NeuroMontage] Warning: Segmentation overlays not supported for 4D data. Creating brain-only super mosaic.")
-            
             print("[NeuroMontage] Creating 4D super mosaic...")
-            print("[NeuroMontage] Note: In auto mode, adaptive sampling may be applied to maintain quality.")
+            if args.resolution == 'auto':
+                print("[NeuroMontage] Note: In auto mode, adaptive sampling may be applied to maintain quality.")
+            
             create_super_mosaic_4d(
                 brain_file=args.brain_file,
                 output_file=args.output_file,
-                resolution=args.resolution
+                input_files=args.input_files,
+                resolution=args.resolution,
+                thresholds=args.threshold,
+                alpha=args.alpha,
+                colormap_name=args.colormap,
+                log_scale=args.log_scale,
+                outline=args.outline,
+                highlight=args.highlight,
+                alternate=args.alternate
             )
         else:
             print("[NeuroMontage] Creating 3D mosaic...")
@@ -205,7 +234,8 @@ def main():
                 end_slice=args.end_slice,
                 outline=args.outline,
                 highlight=args.highlight,
-                alternate=args.alternate
+                alternate=args.alternate,
+                rows=args.rows
             )
 
 

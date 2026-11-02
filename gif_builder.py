@@ -9,7 +9,8 @@ from matplotlib.colors import LogNorm
 from PIL import Image
 
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, calculate_robust_normalization)
+                         get_orientation, get_contour_colors, should_draw_pixel,
+                         calculate_robust_normalization, load_nifti_robust)
 
 
 def create_gif(
@@ -27,8 +28,7 @@ def create_gif(
     """
     Build and save an animated GIF. Each frame is 800px tall.
     """
-    brain_nii = nib.load(brain_file)
-    brain_data_full = brain_nii.get_fdata()
+    brain_nii, brain_data_full = load_nifti_robust(brain_file)
     
     if len(brain_data_full.shape) == 4:
         raise ValueError("[NeuroMontage] GIF creation not supported for 4D data. Use mosaic mode instead.")
@@ -48,8 +48,7 @@ def create_gif(
             raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
 
         if not outline_mode:
-            cum_nii = nib.load(input_files[0])
-            cum_data_full = cum_nii.get_fdata()
+            _, cum_data_full = load_nifti_robust(input_files[0])
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
 
@@ -70,8 +69,7 @@ def create_gif(
         else:
             all_masks = []
             for seg_path in input_files:
-                seg_nii = nib.load(seg_path)
-                seg_data = seg_nii.get_fdata()
+                _, seg_data = load_nifti_robust(seg_path)
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape.")
                 if seg_data.ndim == 4:
@@ -122,6 +120,7 @@ def create_gif(
             rgb_base = plt.cm.gray(base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
+            # Draw masks in order (solid first, dashed, dotted on top)
             for m_i, mask_vol in enumerate(all_masks):
                 seg_slice = get_slice(mask_vol, slice_idx)
                 thr_i = thresholds[m_i]
@@ -130,7 +129,9 @@ def create_gif(
                 color = contour_colors[m_i % num_colors]
 
                 for contour in contours:
-                    for (r, c) in contour:
+                    for pt_idx, (r, c) in enumerate(contour):
+                        if not should_draw_pixel(pt_idx, m_i):
+                            continue
                         rr = int(round(r))
                         cc = int(round(c))
                         for dr in (-1, 0, 1):
