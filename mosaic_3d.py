@@ -13,7 +13,7 @@ from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D,
                           calculate_auto_resolution_and_sampling,
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel,
+                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization, load_nifti_robust)
 
 # Increase PIL's image size limit to handle large mosaics
@@ -35,7 +35,9 @@ def create_mosaic(
     outline=False,
     highlight=False,
     alternate=False,
-    rows=None
+    rows=None,
+    outline_colors=None,
+    line_styles=None
 ):
     """
     Build and save a single mosaic (JPEG) with resolution-based layout.
@@ -227,8 +229,7 @@ def create_mosaic(
             norm_overlay = calculate_robust_normalization(cum_data_full)
         cmap = plt.get_cmap(colormap_name)
     elif has_segmentation and outline_mode:
-        contour_colors = get_contour_colors()
-        num_colors = len(contour_colors)
+        contour_colors, contour_patterns = resolve_outline_styles(len(all_masks), outline_colors, line_styles)
 
     # Build the display sequence with explicit row/column positions
     display_sequence = []
@@ -306,11 +307,11 @@ def create_mosaic(
                     
                     binary_slice = (seg_slice_scaled > thr_i).astype(np.uint8)
                     contours = find_contours_on_slice(binary_slice)
-                    color = contour_colors[m_i % num_colors]
+                    color = contour_colors[m_i]
 
                     for contour in contours:
                         for pt_idx, (r, c) in enumerate(contour):
-                            if not should_draw_pixel(pt_idx, m_i):
+                            if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
                                 continue
                             rr = int(round(r))
                             cc = int(round(c))

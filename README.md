@@ -90,6 +90,13 @@ python neuromontage.py \
   --highlight
 ```
 
+Each mask gets a color and line style by its position (orange solid, sky blue dashed, green dotted, ...). To fix them per mask, for example when a mask may be missing, use `--colors` and `--line-styles` with one value per mask:
+
+```bash
+python neuromontage.py -b flair.nii.gz -s gmwm.nii.gz ventricles.nii.gz -o qc.jpg \
+  --outline --colors orange green --line-styles solid dotted
+```
+
 ### 4. Alternating Mode (compare with/without overlay)
 
 ```bash
@@ -169,6 +176,8 @@ usage: neuromontage.py [-h] -b BRAIN [-s SEG ...] -o OUTPUT
 |------|-------------|---------|
 | `-s`, `--input_files` | One or more lesion/segmentation NIfTIs (optional, 3D only) | none |
 | `--outline` | Force outline mode (even with one input) | off |
+| `--colors` | Outline mode: one color per mask, palette name (`orange`, `skyblue`, `green`, `yellow`, `blue`, `vermillion`, `pink`, `black`) or `#RRGGBB` | palette order |
+| `--line-styles` | Outline mode: one line style per mask (`solid`, `dashed`, `dotted`, `long-dash`, `short-dash`, `very-long-dash`, `medium-dash`, `dense-dash`) | in that order |
 | `--highlight` | Red border around slices with lesions | off |
 | `--alternate` | Alternate rows: brain-only vs. brain+overlay | off |
 
@@ -359,7 +368,7 @@ If this tool helped your research, please cite it:
   title        = {NeuroMontage: Brain Overlay & Lesion Mosaic Utility},
   year         = {2025},
   url          = {https://github.com/mdschirmer/neuromontage},
-  version      = {2.3.0.0}
+  version      = {2.3.0.1}
 }
 ```
 
@@ -373,6 +382,7 @@ Distributed under the **MIT License** – see [`LICENSE`](LICENSE) for details.
 
 ## Changelog
 
+* **2.3.0.1** – `--colors` and `--line-styles` set the outline color and line style per mask (instead of by position)
 * **2.3.0.0** – Segmentation overlays for 4D images, per-mask line styles, 16:9 layouts, `--rows`, robust NIfTI loading, alternate-mode last-row fix. Versions now use four numbers (MAJOR.FEATURE.TESTED.ITERATION)
 * **2.2** – Alternating mode, robust normalization, brain-only mode, improved 4D intensity indicators
 * **2.1** – Smart resolution management, adaptive sampling, 4D super mosaics

@@ -15,8 +15,8 @@ Features:
     MDS
     MGH / Harvard Medical School
 
-:Version: 2.3.0.0
-:Date: 2026-11-02
+:Version: 2.3.0.1
+:Date: 2026-11-03
 :License: MIT
 
 :Usage Examples:
@@ -43,8 +43,8 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.0"
-__date__ = "2026-11-02"
+__version__ = "2.3.0.1"
+__date__ = "2026-11-03"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
@@ -83,6 +83,16 @@ def parse_args():
     parser.add_argument(
         '--highlight', action='store_true',
         help='Draw a red border around any slice that contains segmentation.'
+    )
+    parser.add_argument(
+        '--colors', type=str, nargs='+', default=None,
+        help=('Outline mode: one color per mask, as palette name (orange, skyblue, green, yellow, '
+              'blue, vermillion, pink, black) or #RRGGBB. Default: palette order.')
+    )
+    parser.add_argument(
+        '--line-styles', type=str, nargs='+', default=None,
+        help=('Outline mode: one line style per mask (solid, dashed, dotted, long-dash, short-dash, '
+              'very-long-dash, medium-dash, dense-dash). Default: in that order.')
     )
     parser.add_argument(
         '--alternate', action='store_true',
@@ -195,7 +205,9 @@ def main():
             log_scale=args.log_scale,
             thresholds=args.threshold,
             outline=args.outline,
-            highlight=args.highlight
+            highlight=args.highlight,
+            outline_colors=args.colors,
+            line_styles=args.line_styles
         )
     else:
         if len(brain_data_full.shape) == 4:
@@ -214,7 +226,9 @@ def main():
                 log_scale=args.log_scale,
                 outline=args.outline,
                 highlight=args.highlight,
-                alternate=args.alternate
+                alternate=args.alternate,
+                outline_colors=args.colors,
+                line_styles=args.line_styles
             )
         else:
             print("[NeuroMontage] Creating 3D mosaic...")
@@ -235,7 +249,9 @@ def main():
                 outline=args.outline,
                 highlight=args.highlight,
                 alternate=args.alternate,
-                rows=args.rows
+                rows=args.rows,
+                outline_colors=args.colors,
+                line_styles=args.line_styles
             )
 
 

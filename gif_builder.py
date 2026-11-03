@@ -9,7 +9,7 @@ from matplotlib.colors import LogNorm
 from PIL import Image
 
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel,
+                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization, load_nifti_robust)
 
 
@@ -23,7 +23,9 @@ def create_gif(
     log_scale=False,
     thresholds=None,
     outline=False,
-    highlight=False
+    highlight=False,
+    outline_colors=None,
+    line_styles=None
 ):
     """
     Build and save an animated GIF. Each frame is 800px tall.
@@ -79,8 +81,7 @@ def create_gif(
             # Robust normalization for brain
             norm_brain = calculate_robust_normalization(brain_data_full)
             
-            contour_colors = get_contour_colors()
-            num_colors = len(contour_colors)
+            contour_colors, contour_patterns = resolve_outline_styles(len(all_masks), outline_colors, line_styles)
     else:
         outline_mode = False
         single_file = False
@@ -126,11 +127,11 @@ def create_gif(
                 thr_i = thresholds[m_i]
                 binary_slice = (seg_slice > thr_i).astype(np.uint8)
                 contours = find_contours_on_slice(binary_slice)
-                color = contour_colors[m_i % num_colors]
+                color = contour_colors[m_i]
 
                 for contour in contours:
                     for pt_idx, (r, c) in enumerate(contour):
-                        if not should_draw_pixel(pt_idx, m_i):
+                        if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
                             continue
                         rr = int(round(r))
                         cc = int(round(c))

@@ -242,6 +242,67 @@ def get_line_pattern(mask_index):
     return patterns[mask_index % len(patterns)]
 
 
+# Names of the palette colors and line patterns above, in the same order
+CONTOUR_COLOR_NAMES = ['orange', 'skyblue', 'green', 'yellow', 'blue', 'vermillion', 'pink', 'black']
+LINE_STYLE_NAMES = ['solid', 'dashed', 'dotted', 'long-dash', 'short-dash',
+                    'very-long-dash', 'medium-dash', 'dense-dash']
+
+
+def resolve_outline_styles(n_masks, colors=None, line_styles=None):
+    """
+    Color and line pattern for each mask in outline mode.
+    
+    Without colors/line_styles, mask i gets palette color i and line pattern i.
+    With them, each mask gets the given color (palette name or #RRGGBB) and line
+    style (name from LINE_STYLE_NAMES), so a caller can leave out a mask without
+    the following masks changing their look.
+    
+    Args:
+        n_masks: Number of masks
+        colors: Optional list of color names / hex values, one per mask
+        line_styles: Optional list of line style names, one per mask
+    
+    Returns:
+        tuple: (list of RGB uint8 arrays, list of line pattern indexes)
+    
+    Raises:
+        ValueError: if a list does not have one entry per mask, or a value is unknown
+    """
+    palette = get_contour_colors()
+    if colors is None:
+        rgb = [palette[i % len(palette)] for i in range(n_masks)]
+    else:
+        if len(colors) != n_masks:
+            raise ValueError(f"--colors needs one color per mask ({n_masks}), got {len(colors)}")
+        rgb = []
+        for color in colors:
+            name = color.strip().lower()
+            if name in CONTOUR_COLOR_NAMES:
+                rgb.append(palette[CONTOUR_COLOR_NAMES.index(name)])
+            elif len(name) == 7 and name.startswith('#'):
+                try:
+                    rgb.append(np.array([int(name[i:i + 2], 16) for i in (1, 3, 5)], dtype=np.uint8))
+                except ValueError:
+                    raise ValueError(f"Invalid color '{color}' (use #RRGGBB)")
+            else:
+                raise ValueError(f"Unknown color '{color}'. Use #RRGGBB or one of: "
+                                 f"{', '.join(CONTOUR_COLOR_NAMES)}")
+    
+    if line_styles is None:
+        patterns = list(range(n_masks))
+    else:
+        if len(line_styles) != n_masks:
+            raise ValueError(f"--line-styles needs one style per mask ({n_masks}), got {len(line_styles)}")
+        patterns = []
+        for style in line_styles:
+            name = style.strip().lower()
+            if name not in LINE_STYLE_NAMES:
+                raise ValueError(f"Unknown line style '{style}'. Use one of: {', '.join(LINE_STYLE_NAMES)}")
+            patterns.append(LINE_STYLE_NAMES.index(name))
+    
+    return rgb, patterns
+
+
 def should_draw_pixel(contour_index, mask_index):
     """
     Determine if a pixel should be drawn based on its position along the contour
@@ -249,7 +310,7 @@ def should_draw_pixel(contour_index, mask_index):
     
     Args:
         contour_index: Index of this point along the contour (0, 1, 2, ...)
-        mask_index: Index of the segmentation mask
+        mask_index: Line pattern index (by default the mask's index)
     
     Returns:
         bool: True if this pixel should be drawn

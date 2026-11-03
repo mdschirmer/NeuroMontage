@@ -13,7 +13,7 @@ from skimage.transform import resize
 from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel,
+                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization,
                          calculate_median_excluding_background, load_nifti_robust)
 
@@ -32,7 +32,9 @@ def create_super_mosaic_4d(
     log_scale=False,
     outline=False,
     highlight=False,
-    alternate=False
+    alternate=False,
+    outline_colors=None,
+    line_styles=None
 ):
     """
     Create a "super mosaic" for 4D data where each volume is displayed in one row.
@@ -128,8 +130,7 @@ def create_super_mosaic_4d(
                 
                 all_masks.append(seg_data)
             
-            contour_colors = get_contour_colors()
-            num_colors = len(contour_colors)
+            contour_colors, contour_patterns = resolve_outline_styles(len(all_masks), outline_colors, line_styles)
             print(f"[NeuroMontage] Outline mode: {len(all_masks)} mask(s)")
     else:
         outline_mode = False
@@ -355,11 +356,11 @@ def create_super_mosaic_4d(
                         thr_i = thresholds[m_i]
                         binary_slice = (seg_slice_scaled > thr_i).astype(np.uint8)
                         contours = find_contours_on_slice(binary_slice)
-                        color = contour_colors[m_i % num_colors] / 255.0
+                        color = contour_colors[m_i] / 255.0
                         
                         for contour in contours:
                             for pt_idx, (r, c) in enumerate(contour):
-                                if not should_draw_pixel(pt_idx, m_i):
+                                if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
                                     continue
                                 rr = int(round(r))
                                 cc = int(round(c))
