@@ -13,7 +13,7 @@ Create publication-ready **mosaic images** *or* **animated GIFs** of brain slice
 
 Additional features:
 
-* **Smart resolution management** – Automatically optimizes output quality without upscaling, keeping native resolution where possible
+* **Smart resolution management** – Automatically optimizes output quality, keeping native resolution where possible. Slices smaller than 100px are enlarged by a whole-number factor, without interpolation
 * **Adaptive sampling** – For large datasets, intelligently reduces slice count to maintain image quality and reasonable file sizes
 * **4D volume support** – Creates "super mosaics" with each timepoint/volume displayed in its own row, including intensity indicator bars
 * **Slice highlighting** (`--highlight`) – Adds a red border around slices containing lesion voxels
@@ -131,9 +131,9 @@ python neuromontage.py -b brain.nii.gz -o output.jpg
 ```
 
 **What it does:**
-- Maintains native slice resolution whenever possible (no upscaling)
+- Maintains native slice resolution whenever possible (slices smaller than 100px are enlarged 2×, 3×, … without interpolation)
 - Automatically samples slices if needed to keep file size reasonable
-- Ensures output dimensions stay within 4000×4000 pixels
+- Ensures 3D mosaics stay within 3840×2160 pixels (4D mosaics: 3840 pixels wide)
 - Optimizes grid layout for best use of space
 
 **When to use:** Almost always! This mode provides the best quality-to-file-size ratio.
@@ -144,9 +144,9 @@ python neuromontage.py -b brain.nii.gz -o output.jpg --resolution 4k
 ```
 
 **What it does:**
-- Forces output to specific dimensions (HD: 1920×1080, 2K: 2560×1440, 4K: 3840×2160)
+- Fits output within specific dimensions (HD: 1920×1080, 2K: 2560×1440, 4K: 3840×2160)
 - May significantly downsample for large datasets
-- Never upscales (maintains quality)
+- Never enlarges slices to fill the frame (only slices smaller than 100px are enlarged, as in auto mode)
 
 **When to use:** When you need consistent output dimensions across multiple datasets, or for presentation/publication with specific size requirements.
 

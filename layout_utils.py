@@ -19,8 +19,28 @@ MAX_HEIGHT_3D = 2160  # Maximum height for 3D mosaics
 MIN_SLICE_SIZE = 100  # Minimum slice dimension (both 3D and 4D)
 
 
+def max_upscale(slice_h, slice_w):
+    """
+    Whole-number upscale factor that brings the smaller slice side to MIN_SLICE_SIZE.
+    Returns 1 (no upscaling) for slices that are already large enough.
+    """
+    return max(1, int(np.ceil(MIN_SLICE_SIZE / min(slice_h, slice_w))))
+
+
+def limit_scale(scale, slice_h, slice_w):
+    """
+    Limit a fit-to-target scale factor.
+    Downscaling is unchanged. Upscaling only uses whole-number factors (so
+    nearest-neighbour resizing keeps every voxel the same size) and only up to
+    max_upscale(), i.e. only for slices smaller than MIN_SLICE_SIZE.
+    """
+    if scale <= 1.0:
+        return scale
+    return float(min(int(scale), max_upscale(slice_h, slice_w)))
+
+
 def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=False,
-                                          n_volumes=1, n_slices_per_volume=None):
+                                          n_volumes=1, n_slices_per_volume=None, reserved_width=0):
     """
     Calculate output resolution AND recommend slice sampling to prevent file size explosion.
     
@@ -36,38 +56,44 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
         is_4d: Whether this is 4D data
         n_volumes: Number of volumes (for 4D data)
         n_slices_per_volume: Slices per volume (for 4D data)
+        reserved_width: Width kept free next to the slices (for 4D data, e.g. intensity bars)
     
     Returns:
         tuple: (target_width, target_height, recommended_step, actual_n_slices)
+               target_width excludes reserved_width
                where recommended_step=1 means use all slices, step=2 means every 2nd, etc.
     """
     recommended_step = 1
     actual_n_slices = n_slices
     
     # Determine starting scale factor
-    # NEVER upscale (scale > 1.0) - always use native (1.0x) or downscale if needed
+    # Upscale only small slices, by a whole-number factor, to reach MIN_SLICE_SIZE.
+    # Plan the layout with the enlarged slice size.
     target_scale = 1.0
     smaller_dim = min(slice_h, slice_w)
+    upscale = max_upscale(slice_h, slice_w)
     
-    if smaller_dim < MIN_SLICE_SIZE:
-        print(f"[NeuroMontage] Warning: Native slice size is small ({smaller_dim}px).")
+    if upscale > 1:
+        print(f"[NeuroMontage] Small slices ({smaller_dim}px): enlarging {upscale}x (no interpolation)")
+        slice_h, slice_w = slice_h * upscale, slice_w * upscale
     
     if is_4d:
+        max_width = MAX_WIDTH - reserved_width
         # 4D layout: all slices from one volume in a row
         # Width constraint: n_slices_per_volume * slice_w * scale
         required_width = n_slices_per_volume * slice_w * target_scale
         required_height = n_volumes * slice_h * target_scale
         
-        if required_width > MAX_WIDTH:
+        if required_width > max_width:
             # Need to either reduce scale or sample slices
             # First check if we can fit by downscaling
-            scale_to_fit = MAX_WIDTH / (n_slices_per_volume * slice_w)
+            scale_to_fit = max_width / (n_slices_per_volume * slice_w)
             
             if scale_to_fit < 0.5:
                 # Downscaling too much (< 0.5x) - better to sample slices instead
                 # Calculate how many slices fit at native or moderate downscale
                 max_scale_for_sampling = 0.75  # Don't downscale more than 0.75x when sampling
-                max_slices_at_scale = int(MAX_WIDTH / (slice_w * max_scale_for_sampling))
+                max_slices_at_scale = int(max_width / (slice_w * max_scale_for_sampling))
                 
                 if max_slices_at_scale < n_slices_per_volume:
                     # Need to sample slices
@@ -83,7 +109,7 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
             else:
                 # Can fit with reasonable downscaling (≥ 0.5x)
                 target_scale = scale_to_fit
-                required_width = MAX_WIDTH
+                required_width = max_width
                 print(f"[NeuroMontage] Downscaling to {target_scale:.2f}x to fit width")
         
         # Check height constraint - ensure each slice is at least MIN_SLICE_SIZE tall
@@ -166,10 +192,6 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
         target_width = int(required_width)
         target_height = int(required_height)
     
-    # Ensure minimum dimensions
-    target_width = max(800, target_width)
-    target_height = max(600, target_height)
-    
     return (target_width, target_height, recommended_step, actual_n_slices)
 
 
@@ -198,10 +220,10 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         cols = int(np.ceil(n_slices / rows))
         # Remove empty trailing rows if the slice count does not divide evenly.
         rows = int(np.ceil(n_slices / cols))
-        # Scale down to fit the target dimensions. Do not upscale.
-        scale = min(target_width / (cols * slice_w),
-                    target_height / (rows * slice_h),
-                    1.0)
+        # Scale to fit the target dimensions. Upscale only small slices.
+        scale = limit_scale(min(target_width / (cols * slice_w),
+                                target_height / (rows * slice_h)),
+                            slice_h, slice_w)
         actual_width = int(cols * slice_w * scale)
         actual_height = int(rows * slice_h * scale)
         return (cols, rows, scale, actual_width, actual_height)
@@ -226,7 +248,7 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         # Calculate uniform scale to fit in target resolution
         scale_w = target_width / (cols * slice_w)
         scale_h = target_height / (rows * slice_h)
-        scale = min(scale_w, scale_h)  # Use smaller to ensure it fits
+        scale = limit_scale(min(scale_w, scale_h), slice_h, slice_w)  # Use smaller to ensure it fits
         
         # Check minimum slice size constraint
         scaled_slice_size = min(slice_w, slice_h) * scale
@@ -274,9 +296,11 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         rows = int(np.ceil(n_slices / cols))
         scale = min(target_width / (cols * slice_w), target_height / (rows * slice_h))
         
-        # Ensure minimum scale
+        # Ensure minimum scale (whole-number factor when upscaling)
         min_scale = min_slice_pixels / min(slice_w, slice_h)
-        scale = max(scale, min_scale)
+        if min_scale > 1.0:
+            min_scale = max_upscale(slice_h, slice_w)
+        scale = limit_scale(max(scale, min_scale), slice_h, slice_w)
         
         actual_width = int(cols * slice_w * scale)
         actual_height = int(rows * slice_h * scale)

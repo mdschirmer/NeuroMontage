@@ -11,7 +11,7 @@ from PIL import Image
 from skimage.transform import resize
 
 from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
-                          calculate_optimal_layout)
+                          calculate_optimal_layout, limit_scale)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization,
@@ -142,6 +142,10 @@ def create_super_mosaic_4d(
     else:
         display_rows = n_volumes
     
+    # Intensity bar parameters
+    bar_width = 20
+    gap = 15
+    
     # Determine target resolution and adaptive sampling
     if resolution == 'auto':
         total_slices = display_rows * n_slices_per_volume
@@ -152,7 +156,8 @@ def create_super_mosaic_4d(
                 slice_w=slice_w,
                 is_4d=True,
                 n_volumes=display_rows,
-                n_slices_per_volume=n_slices_per_volume
+                n_slices_per_volume=n_slices_per_volume,
+                reserved_width=gap + bar_width
             )
         
         # Update slice count if adaptive sampling recommended
@@ -168,22 +173,15 @@ def create_super_mosaic_4d(
         target_width, target_height = RESOLUTION_PRESETS[resolution]
         print(f"[NeuroMontage] Using preset {resolution.upper()} resolution: {target_width}×{target_height}")
     
-    # Intensity bar parameters
-    bar_width = 20
-    gap = 15
-    
-    # Calculate scale to fit
-    available_width = target_width - gap - bar_width
-    
+    # Calculate scale to fit (the auto target already excludes the intensity bar)
     if resolution == 'auto':
-        scale_w = available_width / (sampled_slices_per_volume * slice_w)
-        scale_h = target_height / (display_rows * slice_h)
-        scale = min(scale_w, scale_h)
-        scale = min(1.0, scale)  # Never upscale
+        available_width = target_width
     else:
-        scale_w = available_width / (sampled_slices_per_volume * slice_w)
-        scale_h = target_height / (display_rows * slice_h)
-        scale = min(scale_w, scale_h)
+        available_width = target_width - gap - bar_width
+    
+    scale_w = available_width / (sampled_slices_per_volume * slice_w)
+    scale_h = target_height / (display_rows * slice_h)
+    scale = limit_scale(min(scale_w, scale_h), slice_h, slice_w)
     
     # Apply uniform scale
     scaled_slice_h = int(slice_h * scale)
@@ -289,8 +287,8 @@ def create_super_mosaic_4d(
                 brain_slice_scaled = resize(
                     brain_slice,
                     (scaled_slice_h, scaled_slice_w),
-                    order=1,
-                    anti_aliasing=True,
+                    order=1 if scale < 1.0 else 0,
+                    anti_aliasing=scale < 1.0,
                     preserve_range=True
                 )
             else:

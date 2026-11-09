@@ -270,7 +270,8 @@ def create_mosaic(
         
         if scale != 1.0:
             base_slice_scaled = resize(base_slice_norm, (scaled_slice_h, scaled_slice_w), 
-                                      order=1, anti_aliasing=True, preserve_range=True)
+                                      order=1 if scale < 1.0 else 0, anti_aliasing=scale < 1.0,
+                                      preserve_range=True)
         else:
             base_slice_scaled = base_slice_norm
         

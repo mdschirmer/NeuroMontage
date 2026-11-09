@@ -6,9 +6,9 @@ Create resolution-based brain mosaics and GIFs with optional segmentation overla
 Supports 3D/4D NIfTI files with automatic layout optimization and adaptive sampling.
 
 Features:
-- No upscaling (preserves native resolution)
+- No upscaling, except slices smaller than 100px (whole-number factor, no interpolation)
 - Adaptive slice sampling for large datasets
-- Maximum output dimensions: 4000×4000 pixels
+- Maximum output dimensions: 3840×2160 pixels (3D), 3840 pixels wide (4D)
 - Automatic quality-driven resolution selection
 
 :Authors:
@@ -22,7 +22,7 @@ Features:
   # Brain-only mosaic with automatic resolution
   python3 neuromontage.py -b brain_T1.nii.gz -o brain_mosaic.jpg --start_slice 10 --end_slice 50
 
-  # Force 4K output (may result in smaller slices)
+  # Fit output within 4K (may result in smaller slices)
   python3 neuromontage.py -b brain_T1.nii.gz -o brain_mosaic_4k.jpg --resolution 4k
 
   # 4D volume super mosaic with adaptive sampling
@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.3"
+__version__ = "2.3.0.4"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -114,7 +114,7 @@ def parse_args():
             '2K (2560×1440), '
             '4K (3840×2160). '
             'Default: auto. '
-            'Note: Preset resolutions never upscale and may downsample significantly for large datasets.'
+            'Note: Presets are an upper limit. They only enlarge slices smaller than 100px and may downsample significantly for large datasets.'
         )
     )
     parser.add_argument(
