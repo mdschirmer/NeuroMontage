@@ -383,10 +383,7 @@ Distributed under the **MIT License** – see [`LICENSE`](LICENSE) for details.
 
 ## Changelog
 
-* **2.3.0.3** – Load errors go to stderr. A failed load gives exit code 1.
-* **2.3.0.2** – 4D mosaics with non-square slices do not crash or stretch. `--version` shows the version. The log shows the version at start.
-* **2.3.0.1** – `--colors` and `--line-styles` set the outline color and line style per mask (instead of by position)
-* **2.3.0.0** – Segmentation overlays for 4D images, per-mask line styles, 16:9 layouts, `--rows`, robust NIfTI loading, alternate-mode last-row fix
+* **2.3** – Segmentation overlays for 4D images. Line style for each mask. `--colors` and `--line-styles` options. 16:9 layouts. `--rows` option. Robust NIfTI loading. `--version` option.
 * **2.2** – Alternating mode, robust normalization, brain-only mode, improved 4D intensity indicators
 * **2.1** – Smart resolution management, adaptive sampling, 4D super mosaics
 * **2.0** – Resolution presets (HD/2K/4K), optimal layout calculation
