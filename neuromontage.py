@@ -41,13 +41,14 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.2"
+__version__ = "2.3.0.3"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
 
 import argparse
+import sys
 import nibabel as nib
 from mosaic_3d import create_mosaic
 from mosaic_4d import create_super_mosaic_4d
@@ -182,10 +183,10 @@ def main():
     try:
         brain_nii, brain_data_full = load_nifti_robust(args.brain_file)
     except ValueError as e:
-        print(str(e))
+        print(str(e), file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"[NeuroMontage] Error loading {args.brain_file}: {e}")
+        print(f"[NeuroMontage] Error loading {args.brain_file}: {e}", file=sys.stderr)
         return 1
 
     # Route to appropriate handler
@@ -258,4 +259,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
