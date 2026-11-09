@@ -68,8 +68,7 @@ def create_super_mosaic_4d(
     if len(brain_data_4d.shape) != 4:
         raise ValueError("create_super_mosaic_4d only supports 4D data.")
     
-    slice_h = brain_data_4d.shape[0]
-    slice_w = brain_data_4d.shape[1]
+    slice_h, slice_w = get_slice(brain_data_4d[..., 0], 0).shape
     n_slices_per_volume = brain_data_4d.shape[2]
     n_volumes = brain_data_4d.shape[3]
     
