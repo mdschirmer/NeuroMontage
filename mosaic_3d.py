@@ -9,7 +9,7 @@ from matplotlib.colors import LogNorm
 from PIL import Image
 from skimage.transform import resize
 
-from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D,
+from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLICE_SIZE,
                           calculate_auto_resolution_and_sampling,
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
@@ -178,22 +178,30 @@ def create_mosaic(
             # Bound the forced layout by the maximum canvas, not the auto layout target.
             target_width, target_height = MAX_WIDTH, MAX_HEIGHT_3D
 
+    # Preset resolutions: the frame wins over the minimum slice size
+    is_preset = resolution != 'auto'
+    min_slice_pixels = 0 if is_preset else MIN_SLICE_SIZE
+
     # Calculate optimal layout. In alternate mode each slice is shown twice,
     # one above the other (brain-only row + brain+overlay row), so lay out
     # pairs: one tile per slice, twice as tall. force_rows counts pairs there.
     if alternate:
         cols, pair_rows, scale, actual_width, actual_height = calculate_optimal_layout(
             len(used_slices), 2 * slice_h, slice_w, target_width, target_height,
-            force_rows=force_rows, allow_upscale=(resolution != 'auto')
+            min_slice_pixels=min_slice_pixels, force_rows=force_rows, allow_upscale=is_preset
         )
         rows = 2 * pair_rows
     else:
         cols, rows, scale, actual_width, actual_height = calculate_optimal_layout(
             display_count, slice_h, slice_w, target_width, target_height,
-            force_rows=force_rows, allow_upscale=(resolution != 'auto')
+            min_slice_pixels=min_slice_pixels, force_rows=force_rows, allow_upscale=is_preset
         )
 
     print(f"[NeuroMontage] Layout: {cols}×{rows} grid")
+    small_side = int(min(slice_h, slice_w) * scale)
+    if is_preset and small_side < MIN_SLICE_SIZE:
+        print(f"[NeuroMontage] Warning: slices are {small_side}px to fit {resolution.upper()}. "
+              f"Use --slice_step to show fewer, larger slices.")
     print(f"[NeuroMontage] Output dimensions: {actual_width}×{actual_height} (scale: {scale:.2f}x)")
     if resolution != 'auto':
         print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
