@@ -151,11 +151,15 @@ def create_gif(
         pad = 10
         
         if orientation == 'L-R':
-            frame_uint8[pad:pad + left_label.shape[0], pad:pad + left_label.shape[1], :] = left_label[..., None] * 3
-            frame_uint8[pad:pad + right_label.shape[0], -pad - right_label.shape[1]:-pad, :] = right_label[..., None] * 3
+            placements = [(left_label, pad), (right_label, slice_w - pad - right_label.shape[1])]
         else:
-            frame_uint8[pad:pad + left_label.shape[0], -pad - left_label.shape[1]:-pad, :] = left_label[..., None] * 3
-            frame_uint8[pad:pad + right_label.shape[0], pad:pad + right_label.shape[1], :] = right_label[..., None] * 3
+            placements = [(right_label, pad), (left_label, slice_w - pad - left_label.shape[1])]
+        
+        # Blend the labels into the frame (keep the brighter pixel)
+        for label, x0 in placements:
+            h, w = label.shape
+            region = frame_uint8[pad:pad + h, x0:x0 + w]
+            np.maximum(region, (label * 0.9).astype(np.uint8)[..., None], out=region)
 
         # Highlight
         if highlight and has_segmentation:
@@ -178,11 +182,12 @@ def create_gif(
                     frame_uint8[:, t, :] = red_border
                     frame_uint8[:, slice_w - 1 - t, :] = red_border
 
-        # Convert to PIL and resize to 800px tall
+        # Convert to PIL and resize to 800px tall (no interpolation when enlarging)
         pil_frame = Image.fromarray(frame_uint8).convert("RGBA")
         scale = 800.0 / slice_h
         new_w = int(slice_w * scale)
-        pil_frame_resized = pil_frame.resize((new_w, 800), resample=Image.LANCZOS)
+        resample = Image.NEAREST if scale >= 1.0 else Image.LANCZOS
+        pil_frame_resized = pil_frame.resize((new_w, 800), resample=resample)
         images.append(pil_frame_resized)
 
     duration_per_frame = int(gif_duration * 1000 / len(images))
