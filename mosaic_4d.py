@@ -6,12 +6,14 @@ Each volume is displayed in a single row, with optional segmentation overlays.
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 from matplotlib.colors import Normalize, LogNorm
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import resize
 
 from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
-                          calculate_optimal_layout, limit_scale)
+                          calculate_optimal_layout, limit_scale, max_upscale,
+                          MIN_SLICE_SIZE)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization,
@@ -19,6 +21,11 @@ from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels,
 
 # Increase PIL's image size limit
 Image.MAX_IMAGE_PIXELS = None
+
+
+def load_label_font(size_px):
+    """Font for the volume labels (DejaVu Sans, shipped with matplotlib)."""
+    return ImageFont.truetype(font_manager.findfont('DejaVu Sans'), max(1, int(round(size_px))))
 
 
 def create_super_mosaic_4d(
@@ -146,6 +153,22 @@ def create_super_mosaic_4d(
     bar_width = 20
     gap = 15
     
+    # Volume labels ("Vol N") go in a white margin left of the slices, and a
+    # white border goes around the image. Estimate the label font size from the
+    # largest scale that is possible, so that the margin is wide enough.
+    frame_pad = 10
+    label_gap = 6
+    longest_label = f"Vol {n_volumes} +seg" if (alternate and has_segmentation) else f"Vol {n_volumes}"
+    if resolution == 'auto':
+        est_scale = max_upscale(slice_h, slice_w)
+    else:
+        preset_w, preset_h = RESOLUTION_PRESETS[resolution]
+        est_scale = min((preset_w - gap - bar_width) / (n_slices_per_volume * slice_w),
+                        preset_h / (display_rows * slice_h))
+    label_font = load_label_font(max(8, int(est_scale * 8)) * 100 / 72)  # points at 100 dpi -> px
+    label_margin = frame_pad + int(np.ceil(label_font.getlength(longest_label))) + label_gap
+    reserved_width = label_margin + gap + bar_width + frame_pad
+    
     # Determine target resolution and adaptive sampling
     if resolution == 'auto':
         total_slices = display_rows * n_slices_per_volume
@@ -157,7 +180,7 @@ def create_super_mosaic_4d(
                 is_4d=True,
                 n_volumes=display_rows,
                 n_slices_per_volume=n_slices_per_volume,
-                reserved_width=gap + bar_width
+                reserved_width=reserved_width
             )
         
         # Update slice count if adaptive sampling recommended
@@ -173,14 +196,16 @@ def create_super_mosaic_4d(
         target_width, target_height = RESOLUTION_PRESETS[resolution]
         print(f"[NeuroMontage] Using preset {resolution.upper()} resolution: {target_width}×{target_height}")
     
-    # Calculate scale to fit (the auto target already excludes the intensity bar)
+    # Calculate scale to fit (the auto target already excludes labels, bar and border)
     if resolution == 'auto':
         available_width = target_width
+        available_height = target_height
     else:
-        available_width = target_width - gap - bar_width
+        available_width = target_width - reserved_width
+        available_height = target_height - 2 * frame_pad
     
     scale_w = available_width / (sampled_slices_per_volume * slice_w)
-    scale_h = target_height / (display_rows * slice_h)
+    scale_h = available_height / (display_rows * slice_h)
     scale = min(scale_w, scale_h)
     if resolution == 'auto':
         scale = limit_scale(scale, slice_h, slice_w)
@@ -194,8 +219,22 @@ def create_super_mosaic_4d(
     canvas_width = slices_width + gap + bar_width
     canvas_height = scaled_slice_h * display_rows
     
+    # Final image: labels + slices + bar + border. Presets: exactly the preset size.
+    content_width = label_margin + canvas_width + frame_pad
+    content_height = canvas_height + 2 * frame_pad
+    out_width, out_height = content_width, content_height
+    if resolution != 'auto':
+        if content_width <= target_width and content_height <= target_height:
+            out_width, out_height = target_width, target_height
+        else:
+            print(f"[NeuroMontage] Warning: mosaic ({content_width}×{content_height}) is larger than "
+                  f"{resolution.upper()}. Not padded to {target_width}×{target_height}.")
+    
     print(f"[NeuroMontage] Layout: {sampled_slices_per_volume} slices × {display_rows} rows (+ intensity indicators)")
-    print(f"[NeuroMontage] Output dimensions: {canvas_width}×{canvas_height} (scale: {scale:.2f}x)")
+    small_side = min(scaled_slice_h, scaled_slice_w)
+    if resolution != 'auto' and small_side < MIN_SLICE_SIZE:
+        print(f"[NeuroMontage] Warning: slices are {small_side}px to fit {resolution.upper()}.")
+    print(f"[NeuroMontage] Output dimensions: {out_width}×{out_height} (scale: {scale:.2f}x)")
     if resolution != 'auto':
         print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
     
@@ -455,43 +494,25 @@ def create_super_mosaic_4d(
             if row_y_start <= y_pos < row_y_end:
                 canvas_uint8[y_pos, bar_x_start:bar_x_end, :] = orange
     
-    # Add volume labels
-    fig_dpi = 100
-    fig_width = canvas_width / fig_dpi
-    fig_height = canvas_height / fig_dpi
+    # Place the mosaic on a white frame and add the volume labels
+    frame = Image.new('RGB', (out_width, out_height), (255, 255, 255))
+    x0 = (out_width - content_width) // 2 + label_margin
+    y0 = (out_height - content_height) // 2 + frame_pad
+    frame.paste(Image.fromarray(canvas_uint8), (x0, y0))
     
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=fig_dpi)
-    ax.imshow(canvas_uint8)
-    
-    # Add y-axis labels
-    y_ticks = []
-    y_labels = []
+    draw = ImageDraw.Draw(frame)
     for row_idx, (vol_idx, show_overlay) in enumerate(display_sequence):
-        y_center = (row_idx + 0.5) * scaled_slice_h
-        y_ticks.append(y_center)
-        
-        if alternate and has_segmentation:
-            if show_overlay:
-                y_labels.append(f"Vol {vol_idx + 1} +seg")
-            else:
-                y_labels.append(f"Vol {vol_idx + 1}")
-        else:
-            y_labels.append(f"Vol {vol_idx + 1}")
+        label = f"Vol {vol_idx + 1}"
+        if alternate and has_segmentation and show_overlay:
+            label += " +seg"
+        y_center = y0 + int((row_idx + 0.5) * scaled_slice_h)
+        draw.text((x0 - label_gap, y_center), label, fill=(0, 0, 0), font=label_font, anchor='rm')
     
-    ax.set_yticks(y_ticks)
-    ax.set_yticklabels(y_labels, fontsize=max(8, int(scale * 8)), ha='right')
-    ax.tick_params(axis='y', which='both', left=False, right=False)
-    
-    ax.set_xticks([])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    
-    plt.tight_layout(pad=0)
-    plt.savefig(output_file, dpi=fig_dpi, bbox_inches='tight', pad_inches=0.1)
-    plt.close()
-    
+    # Save - use format based on extension
+    if output_file.lower().endswith('.png'):
+        frame.save(output_file, format='PNG')
+    else:
+        frame.save(output_file, format='JPEG', quality=95)
     print(f"[NeuroMontage] 4D mosaic saved to {output_file}")
 
 

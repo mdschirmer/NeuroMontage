@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.6"
+__version__ = "2.3.0.7"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -114,7 +114,7 @@ def parse_args():
             '2K (2560×1440), '
             '4K (3840×2160). '
             'Default: auto. '
-            'Note: Presets fill the frame. They enlarge slices without interpolation and may downsample significantly for large datasets. 3D mosaics are padded to exactly the preset size.'
+            'Note: Presets fill the frame. They enlarge slices without interpolation and may downsample significantly for large datasets. The output is padded to exactly the preset size.'
         )
     )
     parser.add_argument(
