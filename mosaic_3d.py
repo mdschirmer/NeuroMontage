@@ -132,10 +132,11 @@ def create_mosaic(
     
     # Determine resolution and check if adaptive sampling needed
     if resolution == 'auto':
+        # In alternate mode plan with slice pairs (one tile per slice, twice as tall)
         target_width, target_height, adaptive_step, final_display_count = \
             calculate_auto_resolution_and_sampling(
-                display_count, 
-                slice_h=slice_h, 
+                len(used_slices) if alternate else display_count,
+                slice_h=2 * slice_h if alternate else slice_h,
                 slice_w=slice_w,
                 is_4d=False
             )
@@ -168,7 +169,7 @@ def create_mosaic(
             if pairs > len(used_slices):
                 pairs = len(used_slices)
                 print(f"[NeuroMontage] Warning: --rows exceeds slice count. Using {2 * pairs} rows.")
-            force_rows = 2 * pairs
+            force_rows = pairs
         else:
             force_rows = min(rows, display_count)
             if force_rows < rows:
@@ -177,21 +178,20 @@ def create_mosaic(
             # Bound the forced layout by the maximum canvas, not the auto layout target.
             target_width, target_height = MAX_WIDTH, MAX_HEIGHT_3D
 
-    # Calculate optimal layout based on display count
-    cols, rows, scale, actual_width, actual_height = calculate_optimal_layout(
-        display_count, slice_h, slice_w, target_width, target_height,
-        force_rows=force_rows
-    )
-
-    # In alternate mode the rendering emits 2 rows per chunk of `cols` slices
-    # (brain-only + brain+overlay), so the true row count is 2*ceil(N/cols),
-    # not ceil(2N/cols). Correct rows/canvas to match — otherwise the last
-    # overlay row gets clipped when N is not divisible by cols.
+    # Calculate optimal layout. In alternate mode each slice is shown twice,
+    # one above the other (brain-only row + brain+overlay row), so lay out
+    # pairs: one tile per slice, twice as tall. force_rows counts pairs there.
     if alternate:
-        corrected_rows = 2 * int(np.ceil(len(used_slices) / cols))
-        if corrected_rows != rows:
-            rows = corrected_rows
-            actual_height = int(rows * slice_h * scale)
+        cols, pair_rows, scale, actual_width, actual_height = calculate_optimal_layout(
+            len(used_slices), 2 * slice_h, slice_w, target_width, target_height,
+            force_rows=force_rows, allow_upscale=(resolution != 'auto')
+        )
+        rows = 2 * pair_rows
+    else:
+        cols, rows, scale, actual_width, actual_height = calculate_optimal_layout(
+            display_count, slice_h, slice_w, target_width, target_height,
+            force_rows=force_rows, allow_upscale=(resolution != 'auto')
+        )
 
     print(f"[NeuroMontage] Layout: {cols}×{rows} grid")
     print(f"[NeuroMontage] Output dimensions: {actual_width}×{actual_height} (scale: {scale:.2f}x)")
@@ -417,6 +417,19 @@ def create_mosaic(
             composite_uint8[pad:pad + scaled_l_h, -pad - scaled_l_w:-pad if pad > 0 else None, :] = \
                 np.maximum(composite_uint8[pad:pad + scaled_l_h, -pad - scaled_l_w:-pad if pad > 0 else None, :],
                           left_label_scaled[..., None] * 0.9)
+
+    # Preset resolution: center the mosaic on a black canvas of exactly that size
+    if resolution != 'auto':
+        out_h, out_w = target_height, target_width
+        if canvas_h <= out_h and canvas_w <= out_w:
+            framed = np.zeros((out_h, out_w, 3), dtype=np.uint8)
+            y_off = (out_h - canvas_h) // 2
+            x_off = (out_w - canvas_w) // 2
+            framed[y_off:y_off + canvas_h, x_off:x_off + canvas_w] = composite_uint8
+            composite_uint8 = framed
+        else:
+            print(f"[NeuroMontage] Warning: mosaic ({canvas_w}×{canvas_h}) is larger than "
+                  f"{resolution.upper()}. Not padded to {out_w}×{out_h}.")
 
     # Save - use format based on extension
     final_image = Image.fromarray(composite_uint8)

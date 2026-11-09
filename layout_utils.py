@@ -196,7 +196,8 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
 
 
 def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_height,
-                            min_slice_pixels=100, max_slice_pixels=None, force_rows=None):
+                            min_slice_pixels=100, max_slice_pixels=None, force_rows=None,
+                            allow_upscale=False):
     """
     Calculate optimal grid layout to best fit target resolution.
     Uses uniform scaling to preserve slice aspect ratios.
@@ -210,20 +211,24 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         min_slice_pixels: Minimum size for each slice in pixels
         max_slice_pixels: Maximum size for each slice in pixels (None = no limit)
         force_rows: If set, use exactly this row count and skip the layout search
+        allow_upscale: If True, scale freely to fill the target (preset resolutions).
+                       If False, upscale only small slices (see limit_scale).
 
     Returns:
         tuple: (columns, rows, scale_factor, actual_width, actual_height)
     """
+    def cap(scale):
+        return scale if allow_upscale else limit_scale(scale, slice_h, slice_w)
+
     if force_rows is not None:
         # The user selects the row count. Derive the column count from it.
         rows = max(1, min(force_rows, n_slices))
         cols = int(np.ceil(n_slices / rows))
         # Remove empty trailing rows if the slice count does not divide evenly.
         rows = int(np.ceil(n_slices / cols))
-        # Scale to fit the target dimensions. Upscale only small slices.
-        scale = limit_scale(min(target_width / (cols * slice_w),
-                                target_height / (rows * slice_h)),
-                            slice_h, slice_w)
+        # Scale to fit the target dimensions.
+        scale = cap(min(target_width / (cols * slice_w),
+                        target_height / (rows * slice_h)))
         actual_width = int(cols * slice_w * scale)
         actual_height = int(rows * slice_h * scale)
         return (cols, rows, scale, actual_width, actual_height)
@@ -248,7 +253,7 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         # Calculate uniform scale to fit in target resolution
         scale_w = target_width / (cols * slice_w)
         scale_h = target_height / (rows * slice_h)
-        scale = limit_scale(min(scale_w, scale_h), slice_h, slice_w)  # Use smaller to ensure it fits
+        scale = cap(min(scale_w, scale_h))  # Use smaller to ensure it fits
         
         # Check minimum slice size constraint
         scaled_slice_size = min(slice_w, slice_h) * scale
@@ -300,7 +305,7 @@ def calculate_optimal_layout(n_slices, slice_h, slice_w, target_width, target_he
         min_scale = min_slice_pixels / min(slice_w, slice_h)
         if min_scale > 1.0:
             min_scale = max_upscale(slice_h, slice_w)
-        scale = limit_scale(max(scale, min_scale), slice_h, slice_w)
+        scale = cap(max(scale, min_scale))
         
         actual_width = int(cols * slice_w * scale)
         actual_height = int(rows * slice_h * scale)

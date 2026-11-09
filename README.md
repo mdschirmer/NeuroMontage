@@ -144,9 +144,9 @@ python neuromontage.py -b brain.nii.gz -o output.jpg --resolution 4k
 ```
 
 **What it does:**
-- Fits output within specific dimensions (HD: 1920×1080, 2K: 2560×1440, 4K: 3840×2160)
+- Gives exactly this output size (HD: 1920×1080, 2K: 2560×1440, 4K: 3840×2160); 3D mosaics are centered on a black frame
 - May significantly downsample for large datasets
-- Never enlarges slices to fill the frame (only slices smaller than 100px are enlarged, as in auto mode)
+- Enlarges or reduces slices to fill the frame; enlarging uses no interpolation
 
 **When to use:** When you need consistent output dimensions across multiple datasets, or for presentation/publication with specific size requirements.
 

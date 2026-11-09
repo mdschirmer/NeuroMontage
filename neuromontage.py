@@ -22,7 +22,7 @@ Features:
   # Brain-only mosaic with automatic resolution
   python3 neuromontage.py -b brain_T1.nii.gz -o brain_mosaic.jpg --start_slice 10 --end_slice 50
 
-  # Fit output within 4K (may result in smaller slices)
+  # 4K output (slices are enlarged or reduced to fill the frame)
   python3 neuromontage.py -b brain_T1.nii.gz -o brain_mosaic_4k.jpg --resolution 4k
 
   # 4D volume super mosaic with adaptive sampling
@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.4"
+__version__ = "2.3.0.5"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -114,7 +114,7 @@ def parse_args():
             '2K (2560×1440), '
             '4K (3840×2160). '
             'Default: auto. '
-            'Note: Presets are an upper limit. They only enlarge slices smaller than 100px and may downsample significantly for large datasets.'
+            'Note: Presets fill the frame. They enlarge slices without interpolation and may downsample significantly for large datasets. 3D mosaics are padded to exactly the preset size.'
         )
     )
     parser.add_argument(

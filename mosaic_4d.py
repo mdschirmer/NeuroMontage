@@ -181,7 +181,9 @@ def create_super_mosaic_4d(
     
     scale_w = available_width / (sampled_slices_per_volume * slice_w)
     scale_h = target_height / (display_rows * slice_h)
-    scale = limit_scale(min(scale_w, scale_h), slice_h, slice_w)
+    scale = min(scale_w, scale_h)
+    if resolution == 'auto':
+        scale = limit_scale(scale, slice_h, slice_w)
     
     # Apply uniform scale
     scaled_slice_h = int(slice_h * scale)
