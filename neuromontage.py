@@ -15,8 +15,6 @@ Features:
     MDS
     MGH / Harvard Medical School
 
-:Version: 2.3.0.1
-:Date: 2026-11-03
 :License: MIT
 
 :Usage Examples:
@@ -43,8 +41,8 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.1"
-__date__ = "2026-11-03"
+__version__ = "2.3.0.2"
+__date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
@@ -61,6 +59,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='NeuroMontage: resolution-based mosaic/GIF of brain slices with optional segmentation overlays.',
         epilog='For detailed documentation, see README.md'
+    )
+    parser.add_argument(
+        '--version', action='version', version=f'NeuroMontage {__version__} ({__date__})'
     )
     parser.add_argument(
         '-b', '--brain_file', type=str, required=True,
@@ -175,6 +176,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    print(f"[NeuroMontage] v{__version__} ({__date__})")
 
     # Load brain data to check dimensionality (with robust error handling)
     try:
