@@ -354,6 +354,11 @@ def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percen
         vmin = np.min(volume_data)
         vmax = np.max(volume_data)
     
+    # Too few distinct values (e.g. a binary mask): use the full value range
+    if vmax <= vmin:
+        vmin = np.min(volume_data)
+        vmax = np.max(volume_data)
+    
     # Ensure vmax > vmin to avoid division by zero
     if vmax <= vmin:
         vmax = vmin + 1
