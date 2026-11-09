@@ -16,7 +16,7 @@ from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_samp
                           MIN_SLICE_SIZE)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization,
+                         calculate_robust_normalization, calculate_overlay_normalization,
                          calculate_median_excluding_background, load_nifti_robust)
 
 # Increase PIL's image size limit
@@ -270,7 +270,8 @@ def create_super_mosaic_4d(
                 raise ValueError("No positive segmentation values above threshold for log scaling.")
             norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
         else:
-            norm_overlay = calculate_robust_normalization(seg_data_full)
+            # Colors start at the threshold, so every shown value is visible
+            norm_overlay = calculate_overlay_normalization(seg_data_full, thr0)
         cmap = plt.get_cmap(colormap_name)
     
     # Create RGB canvas

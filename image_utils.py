@@ -366,6 +366,27 @@ def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percen
     return Normalize(vmin=vmin, vmax=vmax)
 
 
+def calculate_overlay_normalization(volume_data, threshold):
+    """
+    Color range for a segmentation overlay: from the threshold to the robust maximum.
+    
+    Values at or below the threshold are not shown, so every shown value gets a
+    color above the bottom of the colormap. For example, labels 1, 2, 3 with
+    threshold 0 map to 1/3, 2/3 and 1.
+    
+    Args:
+        volume_data: numpy array of overlay values (3D or 4D)
+        threshold: Overlay threshold (values > threshold are shown)
+    
+    Returns:
+        Normalize: matplotlib Normalize object
+    """
+    vmax = calculate_robust_normalization(volume_data).vmax
+    if vmax <= threshold:
+        vmax = threshold + 1
+    return Normalize(vmin=threshold, vmax=vmax)
+
+
 def calculate_median_excluding_background(volume_data):
     """
     Calculate median intensity excluding background voxels.
