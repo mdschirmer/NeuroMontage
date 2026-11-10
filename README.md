@@ -168,7 +168,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description |
 |------|-------------|
 | `-b`, `--brain_file` | Structural brain NIfTI (T1/T2/FLAIR, 3D or 4D) |
-| `-o`, `--output_file` | Destination `.jpg` (mosaic) **or** `.gif` (animation) |
+| `-o`, `--output_file` | Destination `.jpg`, `.jpeg` or `.png` (mosaic) **or** `.gif` (animation) |
 
 ### Segmentation Arguments
 
@@ -204,7 +204,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--gif` | Create animated GIF (3D data only) | off |
+| `--gif` | Create animated GIF (3D data only). Optional: a `.gif` output file always gives a GIF | off |
 | `--duration SEC` | Total GIF runtime in seconds | `10.0` |
 
 ---

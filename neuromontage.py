@@ -41,13 +41,14 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.13"
+__version__ = "2.3.0.14"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
 
 import argparse
+import os
 import sys
 import nibabel as nib
 from mosaic_3d import create_mosaic
@@ -102,7 +103,7 @@ def parse_args():
     )
     parser.add_argument(
         '-o', '--output_file', type=str, required=True,
-        help='Output file path: .jpg for a single mosaic, .gif for an animated GIF.'
+        help='Output file path: .jpg, .jpeg or .png for a mosaic, .gif for an animated GIF.'
     )
     parser.add_argument(
         '--resolution', type=str, default='auto',
@@ -119,7 +120,8 @@ def parse_args():
     )
     parser.add_argument(
         '--gif', action='store_true',
-        help='Produce an animated GIF (iterate through all valid slices). Only for 3D data.'
+        help='Produce an animated GIF (iterate through all valid slices). Only for 3D data. '
+             'Optional: an output file ending in .gif always gives a GIF.'
     )
     parser.add_argument(
         '--duration', type=float, default=10.0,
@@ -181,6 +183,19 @@ def main():
     args = parse_args()
     print(f"[NeuroMontage] v{__version__} ({__date__})")
 
+    # The output file extension decides the output type
+    ext = os.path.splitext(args.output_file)[1].lower()
+    if ext == '.gif':
+        args.gif = True
+    elif args.gif:
+        print(f"[NeuroMontage] Error: --gif needs an output file ending in .gif (got '{ext or 'no extension'}').",
+              file=sys.stderr)
+        return 1
+    elif ext not in ('.jpg', '.jpeg', '.png'):
+        print(f"[NeuroMontage] Error: output file must end in .jpg, .jpeg, .png or .gif (got '{ext or 'no extension'}').",
+              file=sys.stderr)
+        return 1
+
     # Load brain data to check dimensionality (with robust error handling)
     try:
         brain_nii, brain_data_full = load_nifti_robust(args.brain_file)
@@ -197,7 +212,9 @@ def main():
 
     if args.gif:
         if len(brain_data_full.shape) == 4:
-            raise ValueError("[NeuroMontage] GIF creation not supported for 4D data. Use mosaic mode instead.")
+            print("[NeuroMontage] Error: GIF creation is not supported for 4D data. "
+                  "Use a .jpg or .png output file instead.", file=sys.stderr)
+            return 1
         
         print("[NeuroMontage] Creating animated GIF...")
         create_gif(
