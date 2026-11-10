@@ -137,6 +137,58 @@ def load_nifti_robust(filepath):
     )
 
 
+def fill_non_finite(data, name, ceiling=None, per_volume=False):
+    """
+    Replace NaN and +/-inf with a value just below the lowest real value.
+    
+    The fill is the lowest real value minus 1% of the value range (minus 1 if all
+    values are equal), so it is lower than every real value for any sign of data.
+    With a ceiling (the overlay/mask threshold), the fill is also at or below the
+    ceiling, so filled voxels are never shown as segmentation.
+    
+    Args:
+        data: numpy array (3D or 4D)
+        name: Name for the log message (e.g. 'Brain')
+        ceiling: Optional upper limit for the fill value
+        per_volume: For 4D data, use the value range of each volume
+    
+    Returns:
+        numpy array without NaN/inf (the input array if it had none)
+    """
+    bad = ~np.isfinite(data)
+    n_bad = int(bad.sum())
+    if n_bad == 0:
+        return data
+    
+    def fill_value(values):
+        if values.size == 0:
+            fill = 0.0
+        else:
+            lo, hi = values.min(), values.max()
+            fill = lo - 0.01 * (hi - lo) if hi > lo else lo - 1.0
+            if not fill < lo:
+                # Large values with a tiny range: use the next lower float
+                fill = np.nextafter(lo, -np.inf)
+        if ceiling is not None:
+            fill = min(fill, ceiling)
+        return fill
+    
+    data = np.array(data, dtype=np.float64)
+    if per_volume and data.ndim == 4:
+        for v in range(data.shape[3]):
+            vol, vol_bad = data[..., v], bad[..., v]
+            vol[vol_bad] = fill_value(vol[~vol_bad])
+    else:
+        data[bad] = fill_value(data[~bad])
+    print(f"[NeuroMontage] {name}: {n_bad:,} NaN/inf voxels shown as background")
+    return data
+
+
+def slice_has_content(slice_2d):
+    """True if a 2D slice is not constant (constant slices are empty padding)."""
+    return slice_2d.max() > slice_2d.min()
+
+
 def get_slice(img_data, idx):
     """
     Return the idx-th axial slice (rotated 90° clockwise for a consistent orientation).

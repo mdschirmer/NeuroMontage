@@ -17,7 +17,8 @@ from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_samp
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors,
-                         calculate_median_excluding_background, load_nifti_robust)
+                         calculate_median_excluding_background, load_nifti_robust,
+                         fill_non_finite, slice_has_content)
 
 # Increase PIL's image size limit
 Image.MAX_IMAGE_PIXELS = None
@@ -71,15 +72,29 @@ def create_super_mosaic_4d(
         - 4D segmentation with 4D brain: Per-volume masks (must match volume count)
     """
     brain_nii, brain_data_4d = load_nifti_robust(brain_file)
+    brain_data_4d = fill_non_finite(brain_data_4d, 'Brain', per_volume=True)
     
     if len(brain_data_4d.shape) != 4:
         raise ValueError("create_super_mosaic_4d only supports 4D data.")
     
     slice_h, slice_w = get_slice(brain_data_4d[..., 0], 0).shape
-    n_slices_per_volume = brain_data_4d.shape[2]
     n_volumes = brain_data_4d.shape[3]
     
-    print(f"[NeuroMontage] 4D volume: {n_volumes} volumes, {n_slices_per_volume} slices each ({slice_h}x{slice_w})")
+    print(f"[NeuroMontage] 4D volume: {n_volumes} volumes, {brain_data_4d.shape[2]} slices each ({slice_h}x{slice_w})")
+    
+    # Keep slice positions with content in at least one volume, so that every
+    # column shows the same slice position in all rows
+    kept_positions = [
+        k for k in range(brain_data_4d.shape[2])
+        if any(slice_has_content(brain_data_4d[:, :, k, v]) for v in range(n_volumes))
+    ]
+    if not kept_positions:
+        raise ValueError(f"No slices with image content: every slice is constant in all volumes "
+                         f"(e.g. all 0 or all NaN). Image shape: {brain_data_4d.shape}.")
+    if len(kept_positions) < brain_data_4d.shape[2]:
+        print(f"[NeuroMontage] 4D: showing {len(kept_positions)} of {brain_data_4d.shape[2]} slice positions "
+              f"({brain_data_4d.shape[2] - len(kept_positions)} empty in all volumes)")
+    n_slices_per_volume = len(kept_positions)
     
     # Determine segmentation mode
     has_segmentation = input_files is not None and len(input_files) > 0
@@ -101,6 +116,7 @@ def create_super_mosaic_4d(
         if not outline_mode:
             # Single overlay mode
             _, seg_data_full = load_nifti_robust(input_files[0])
+            seg_data_full = fill_non_finite(seg_data_full, 'Overlay', ceiling=thresholds[0])
             
             seg_is_4d = len(seg_data_full.shape) == 4
             
@@ -119,8 +135,9 @@ def create_super_mosaic_4d(
             all_masks = []
             masks_are_4d = []
             
-            for seg_path in input_files:
+            for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
+                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
                 
                 is_4d = len(seg_data.shape) == 4
                 masks_are_4d.append(is_4d)
@@ -186,7 +203,7 @@ def create_super_mosaic_4d(
         # Update slice count if adaptive sampling recommended
         sampled_slices_per_volume = n_slices_per_volume
         if slice_step > 1:
-            sampled_slices_per_volume = len(range(0, n_slices_per_volume, slice_step))
+            sampled_slices_per_volume = len(kept_positions[::slice_step])
             print(f"[NeuroMontage] Using {sampled_slices_per_volume} slices per volume")
         
         print(f"[NeuroMontage] Auto resolution: {target_width}×{target_height}")
@@ -306,9 +323,7 @@ def create_super_mosaic_4d(
         row_y_end = row_y_start + scaled_slice_h
         
         # Process each slice
-        for slice_count, slice_idx in enumerate(range(0, brain_data_4d.shape[2], slice_step)):
-            if slice_count >= sampled_slices_per_volume:
-                break
+        for slice_count, slice_idx in enumerate(kept_positions[::slice_step]):
             
             # Get and normalize brain slice
             brain_slice = get_slice(volume_data, slice_idx)

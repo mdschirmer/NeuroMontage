@@ -13,7 +13,8 @@ from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLIC
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust)
+                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
+                         fill_non_finite, slice_has_content)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -50,6 +51,7 @@ def create_mosaic(
     """
     # Load brain data with robust error handling
     brain_nii, brain_data_full = load_nifti_robust(brain_file)
+    brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
     # Validate 3D data
     if len(brain_data_full.shape) != 3:
@@ -77,12 +79,14 @@ def create_mosaic(
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
+            cum_data_full = fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0])
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
         else:
             all_masks = []
-            for seg_path in input_files:
+            for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
+                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape than the structural volume.")
                 all_masks.append(seg_data)
@@ -110,13 +114,14 @@ def create_mosaic(
     # Build list of slices to use
     valid_slices = [
         idx for idx in range(start_slice, end_slice + 1)
-        if np.any(brain_data_full[:, :, idx] > 0)
+        if slice_has_content(brain_data_full[:, :, idx])
     ]
     
     # Apply user-specified slice_step first
     used_slices = valid_slices[::slice_step]
     if not used_slices:
-        raise ValueError(f"No non-zero slices found between indices {start_slice} and {end_slice}.")
+        raise ValueError(f"No slices with image content between indices {start_slice} and {end_slice}: "
+                         f"every slice is constant (e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}.")
 
     # Get slice dimensions for resolution calculation
     example_slice = get_slice(brain_data_full, used_slices[0])

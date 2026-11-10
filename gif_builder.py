@@ -9,7 +9,8 @@ from PIL import Image
 
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust)
+                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
+                         fill_non_finite, slice_has_content)
 
 
 def create_gif(
@@ -30,6 +31,7 @@ def create_gif(
     Build and save an animated GIF. Each frame is 800px tall.
     """
     brain_nii, brain_data_full = load_nifti_robust(brain_file)
+    brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
     if len(brain_data_full.shape) == 4:
         raise ValueError("[NeuroMontage] GIF creation not supported for 4D data. Use mosaic mode instead.")
@@ -50,6 +52,7 @@ def create_gif(
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
+            cum_data_full = fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0])
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
 
@@ -61,8 +64,9 @@ def create_gif(
 
         else:
             all_masks = []
-            for seg_path in input_files:
+            for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
+                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape.")
                 if seg_data.ndim == 4:
@@ -81,10 +85,11 @@ def create_gif(
 
     valid_slices = [
         i for i in range(brain_data_full.shape[2])
-        if np.any(brain_data_full[:, :, i] > 0)
+        if slice_has_content(brain_data_full[:, :, i])
     ]
     if not valid_slices:
-        raise ValueError("No valid slices found.")
+        raise ValueError(f"No slices with image content: every slice is constant "
+                         f"(e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}.")
 
     images = []
     orientation = get_orientation(brain_nii.affine)
