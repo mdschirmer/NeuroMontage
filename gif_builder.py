@@ -1,5 +1,5 @@
 """
-GIF animation creation for NeuroMontage.
+Animation (GIF or WebP) creation for NeuroMontage.
 """
 
 import numpy as np
@@ -28,7 +28,7 @@ def create_gif(
     line_styles=None
 ):
     """
-    Build and save an animated GIF. Each frame is 800px tall.
+    Build and save an animation (.gif or animated .webp). Each frame is 800px tall.
     """
     brain_nii, brain_data_full = load_nifti_robust(brain_file)
     brain_data_full = fill_non_finite(brain_data_full, 'Brain')
@@ -187,12 +187,30 @@ def create_gif(
         images.append(pil_frame_resized)
 
     duration_per_frame = int(gif_duration * 1000 / len(images))
-    images[0].save(
-        output_file,
-        save_all=True,
-        append_images=images[1:],
-        duration=duration_per_frame,
-        loop=0
-    )
+    if output_file.lower().endswith('.webp'):
+        # Same rule as for mosaics: lossless with outlines (lossy WebP smears thin
+        # colored lines), quality 95 otherwise. Both are smaller than GIF.
+        if has_segmentation and outline_mode:
+            webp_options = dict(lossless=True, method=6)
+        else:
+            webp_options = dict(quality=95, method=4)
+        images = [im.convert('RGB') for im in images]
+        images[0].save(
+            output_file,
+            format='WEBP',
+            save_all=True,
+            append_images=images[1:],
+            duration=duration_per_frame,
+            loop=0,
+            **webp_options
+        )
+    else:
+        images[0].save(
+            output_file,
+            save_all=True,
+            append_images=images[1:],
+            duration=duration_per_frame,
+            loop=0
+        )
 
     print(f"[NeuroMontage] GIF saved to {output_file}")

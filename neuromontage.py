@@ -2,7 +2,7 @@
 """
 NeuroMontage - Brain Overlay Mosaic Generator
 
-Create resolution-based brain mosaics and GIFs with optional segmentation overlays.
+Create resolution-based brain mosaics and animations (GIF/WebP) with optional segmentation overlays.
 Supports 3D/4D NIfTI files with automatic layout optimization and adaptive sampling.
 
 Features:
@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.16"
+__version__ = "2.3.0.17"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -59,7 +59,7 @@ from image_utils import load_nifti_robust
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='NeuroMontage: resolution-based mosaic/GIF of brain slices with optional segmentation overlays.',
+        description='NeuroMontage: resolution-based mosaic/animation of brain slices with optional segmentation overlays.',
         epilog='For detailed documentation, see README.md'
     )
     parser.add_argument(
@@ -103,8 +103,8 @@ def parse_args():
     )
     parser.add_argument(
         '-o', '--output_file', type=str, required=True,
-        help=('Output file path: .jpg, .jpeg, .png or .webp for a mosaic, .gif for an animated GIF. '
-              '.webp gives the smallest files (lossless when outlines are drawn).')
+        help=('Output file path: .jpg, .jpeg, .png or .webp for a mosaic; .gif or .webp (with --animate) '
+              'for an animation. .webp gives the smallest files (lossless when outlines are drawn).')
     )
     parser.add_argument(
         '--resolution', type=str, default='auto',
@@ -120,13 +120,13 @@ def parse_args():
         )
     )
     parser.add_argument(
-        '--gif', action='store_true',
-        help='Produce an animated GIF (iterate through all valid slices). Only for 3D data. '
-             'Optional: an output file ending in .gif always gives a GIF.'
+        '--animate', '--gif', dest='animate', action='store_true',
+        help=('Produce an animation through all slices (.gif or .webp output). Only for 3D data. '
+              'Optional for .gif: a .gif output file always gives an animation. --gif is an alias.')
     )
     parser.add_argument(
         '--duration', type=float, default=10.0,
-        help='GIF duration in seconds (only used if --gif is set). Default=10.0'
+        help='Animation duration in seconds (only used for animations). Default=10.0'
     )
     parser.add_argument(
         '--slice_step', type=int, default=1,
@@ -187,9 +187,9 @@ def main():
     # The output file extension decides the output type
     ext = os.path.splitext(args.output_file)[1].lower()
     if ext == '.gif':
-        args.gif = True
-    elif args.gif:
-        print(f"[NeuroMontage] Error: --gif needs an output file ending in .gif (got '{ext or 'no extension'}').",
+        args.animate = True
+    elif args.animate and ext != '.webp':
+        print(f"[NeuroMontage] Error: --animate needs an output file ending in .gif or .webp (got '{ext or 'no extension'}').",
               file=sys.stderr)
         return 1
     elif ext not in ('.jpg', '.jpeg', '.png', '.webp'):
@@ -208,16 +208,16 @@ def main():
         return 1
 
     # Route to appropriate handler
-    if args.rows is not None and (args.gif or len(brain_data_full.shape) == 4):
+    if args.rows is not None and (args.animate or len(brain_data_full.shape) == 4):
         print("[NeuroMontage] Warning: --rows only applies to 3D mosaics. Ignoring --rows.")
 
-    if args.gif:
+    if args.animate:
         if len(brain_data_full.shape) == 4:
-            print("[NeuroMontage] Error: GIF creation is not supported for 4D data. "
+            print("[NeuroMontage] Error: animations are not supported for 4D data. "
                   "Use a .jpg, .png or .webp output file instead.", file=sys.stderr)
             return 1
         
-        print("[NeuroMontage] Creating animated GIF...")
+        print("[NeuroMontage] Creating animation...")
         create_gif(
             brain_file=args.brain_file,
             input_files=args.input_files,

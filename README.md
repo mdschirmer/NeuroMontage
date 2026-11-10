@@ -1,5 +1,5 @@
 # 🧠 NeuroMontage
-Create publication-ready **mosaic images** *or* **animated GIFs** of brain slices with colored lesion overlays or outlines – all from the command line.
+Create publication-ready **mosaic images** *or* **animations** (GIF/WebP) of brain slices with colored lesion overlays or outlines – all from the command line.
 
 ---
 
@@ -18,7 +18,7 @@ Additional features:
 * **4D volume support** – Creates "super mosaics" with each timepoint/volume displayed in its own row, including intensity indicator bars
 * **Slice highlighting** (`--highlight`) – Adds a red border around slices containing lesion voxels
 * **Flexible slice selection** – Choose start/end indices and subsampling step
-* **Animated GIFs** – Auto-resized to 800px height for manageable file sizes
+* **Animations** (`--animate`, GIF or WebP) – Auto-resized to 800px height for manageable file sizes
 * **L/R orientation labels** – Automatically stamped on every output
 
 ---
@@ -156,7 +156,7 @@ python neuromontage.py -b brain.nii.gz -o output.jpg --resolution 4k
 
 ```text
 usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT 
-                       [--resolution {auto,hd,2k,4k}] [--gif] [--duration SEC]
+                       [--resolution {auto,hd,2k,4k}] [--animate] [--duration SEC]
                        [--outline] [--highlight] [--alternate]
                        [--rows N] [--slice_step N] [--start_slice I] [--end_slice I]
                        [--alpha VAL] [--colormap NAME] [--log_scale]
@@ -168,7 +168,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description |
 |------|-------------|
 | `-b`, `--brain_file` | Structural brain NIfTI (T1/T2/FLAIR, 3D or 4D) |
-| `-o`, `--output_file` | Destination `.jpg`, `.jpeg`, `.png` or `.webp` (mosaic) **or** `.gif` (animation). `.webp` gives the smallest files |
+| `-o`, `--output_file` | Destination `.jpg`, `.jpeg`, `.png` or `.webp` (mosaic) **or** `.gif` / `.webp` with `--animate` (animation). `.webp` gives the smallest files |
 
 ### Segmentation Arguments
 
@@ -204,8 +204,8 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--gif` | Create animated GIF (3D data only). Optional: a `.gif` output file always gives a GIF | off |
-| `--duration SEC` | Total GIF runtime in seconds | `10.0` |
+| `--animate` | Create an animation (3D data only), as `.gif` or `.webp` (smaller; lossless when outlines are drawn). Optional for `.gif`. `--gif` is an alias | off |
+| `--duration SEC` | Total animation runtime in seconds | `10.0` |
 
 ---
 
@@ -257,14 +257,14 @@ python neuromontage.py -b diffusion_4d.nii.gz -o diffusion.jpg
 # (11) 4D volume with forced 2K output
 python neuromontage.py -b fmri_4d.nii.gz -o fmri_2k.jpg --resolution 2k
 
-# (12) Animated GIF with multiple outlines
+# (12) Animation with multiple outlines (WebP: smaller than GIF)
 python neuromontage.py -b brain_T1.nii.gz \
   -s mask1.nii.gz mask2.nii.gz mask3.nii.gz \
-  -o animation.gif --gif --duration 6 --highlight
+  -o animation.webp --animate --duration 6 --highlight
 
 # (13) Animated GIF with overlay and log scale
 python neuromontage.py -b brain_T1.nii.gz -s cumulative.nii.gz \
-  -o overlay_anim.gif --gif --duration 8 \
+  -o overlay_anim.gif --duration 8 \
   --alpha 0.6 --colormap magma --log_scale --highlight
 ```
 
@@ -314,7 +314,7 @@ When you provide a 4D NIfTI file (e.g., diffusion, fMRI, or multi-echo data), Ne
 * JPEG mosaics use quality 95 with full-resolution color, so thin outlines keep their color
 * WebP mosaics (`.webp`) are about 45% smaller than JPEG at the same quality; they are lossless when outlines are drawn
 * PNG mosaics are lossless
-* GIFs are resized to 800px height to keep file sizes manageable
+* Animations are resized to 800px height to keep file sizes manageable; animated WebP is about 40% smaller than GIF and not limited to 256 colors
 * For very large datasets, consider using `--slice_step` or letting auto mode handle sampling
 
 ### Thresholds
@@ -341,7 +341,7 @@ Odd rows show brain-only, even rows show brain+overlay for direct comparison.
 ### 4D Super Mosaic
 Each volume in its own row with intensity indicator bars showing relative signal characteristics.
 
-### Animated GIF
+### Animation
 Frame-by-frame visualization through all valid slices with optional highlighting.
 
 *(Full resolution examples omitted from repository to keep size small – generate them with the sample commands above.)*
