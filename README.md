@@ -20,6 +20,7 @@ Additional features:
 * **Flexible slice selection** – Choose start/end indices and subsampling step
 * **Animations** (`--animate`, GIF or WebP) – Auto-resized to 800px height for manageable file sizes
 * **L/R orientation labels** – Automatically stamped on every output
+* **RGB images** (e.g. diffusion color maps) – Shown in color in 3D mosaics and animations
 
 ---
 
@@ -314,6 +315,7 @@ When you provide a 4D NIfTI file (e.g., diffusion, fMRI, or multi-echo data), Ne
 * JPEG mosaics use quality 95 with full-resolution color, so thin outlines keep their color
 * WebP mosaics (`.webp`) are about 45% smaller than JPEG at the same quality; they are lossless when outlines are drawn
 * PNG mosaics are lossless
+* WebP allows at most 16383 px per side; larger images (e.g. 4D with many volumes) are shrunk to fit. Use `.png` or `.jpg` to keep full size
 * Animations are resized to 800px height to keep file sizes manageable; animated WebP is about 40% smaller than GIF and not limited to 256 colors
 * For very large datasets, consider using `--slice_step` or letting auto mode handle sampling
 

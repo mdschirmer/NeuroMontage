@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.19"
+__version__ = "2.3.0.20"
 __date__ = "2026-11-10"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"

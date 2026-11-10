@@ -50,7 +50,7 @@ def create_mosaic(
                  Row 3 = slices 7-12 (brain), Row 4 = slices 7-12 (brain+overlay), etc.
     """
     # Load brain data with robust error handling
-    brain_nii, brain_data_full = load_nifti_robust(brain_file)
+    brain_nii, brain_data_full, brain_rgb = load_nifti_robust(brain_file, return_rgb=True)
     brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
     # Validate 3D data
@@ -212,7 +212,9 @@ def create_mosaic(
     canvas_h = rows * scaled_slice_h
     canvas_w = cols * scaled_slice_w
     
-    base_canvas = np.zeros((canvas_h, canvas_w), dtype=np.float32)
+    # Gray values, or RGB (0-1) for color images
+    color_shape = (3,) if brain_rgb is not None else ()
+    base_canvas = np.zeros((canvas_h, canvas_w) + color_shape, dtype=np.float32)
     
     if has_segmentation:
         overlay_canvas = np.zeros((canvas_h, canvas_w), dtype=np.float32)
@@ -262,8 +264,10 @@ def create_mosaic(
         x0, x1 = col_i * scaled_slice_w, (col_i + 1) * scaled_slice_w
 
         # Get and scale structural slice
-        base_slice = get_slice(brain_data_full, slice_idx)
-        base_slice_norm = norm_brain(base_slice)
+        if brain_rgb is not None:
+            base_slice_norm = get_slice(brain_rgb, slice_idx) / 255.0
+        else:
+            base_slice_norm = norm_brain(get_slice(brain_data_full, slice_idx))
         
         if scale != 1.0:
             base_slice_scaled = resize(base_slice_norm, (scaled_slice_h, scaled_slice_w), 
@@ -309,19 +313,20 @@ def create_mosaic(
                                   contour_colors[m_i], contour_patterns[m_i])
 
     # Build final composite
+    if brain_rgb is not None:
+        rgb_base = base_canvas
+    else:
+        rgb_base = colormaps['gray'](base_canvas)[..., :3]
     if has_segmentation and not outline_mode:
         rgb_overlay = cmap(overlay_canvas)[..., :3]
-        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite = (rgb_overlay * alpha_mask[..., None] +
                      rgb_base * (1.0 - alpha_mask[..., None]))
         composite_uint8 = (composite * 255).astype(np.uint8)
     elif has_segmentation and outline_mode:
-        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite_uint8 = (rgb_base * 255).astype(np.uint8)
         mask_idx = np.any(outline_canvas > 0, axis=2)
         composite_uint8[mask_idx] = outline_canvas[mask_idx]
     else:
-        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite_uint8 = (rgb_base * 255).astype(np.uint8)
 
     # Highlight slices with segmentation

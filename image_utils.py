@@ -4,11 +4,27 @@ Image processing utilities for NeuroMontage.
 
 import numpy as np
 import nibabel as nib
+from PIL import Image
 from matplotlib import colormaps
 from matplotlib.colors import Normalize, LogNorm, ListedColormap
 
 
-def load_nifti_robust(filepath):
+def load_nifti_robust(filepath, return_rgb=False):
+    """
+    Load a NIfTI file with robust error handling for unusual data types.
+    
+    RGB/RGBA images are returned as gray values (mean of R, G, B). With
+    return_rgb=True the RGB uint8 array (X, Y, Z, 3) is also returned (None for
+    other images), so that callers can show the image in color.
+    
+    Returns:
+        tuple: (nibabel image, data) or (nibabel image, data, rgb) with return_rgb=True
+    """
+    nii, data, rgb = _load_nifti(filepath)
+    return (nii, data, rgb) if return_rgb else (nii, data)
+
+
+def _load_nifti(filepath):
     """
     Load a NIfTI file with robust error handling for unusual data types.
     
@@ -21,7 +37,7 @@ def load_nifti_robust(filepath):
         filepath: Path to the NIfTI file
     
     Returns:
-        tuple: (nibabel image object, numpy array of image data)
+        tuple: (nibabel image object, numpy array of image data, RGB uint8 array or None)
     
     Raises:
         ValueError: If the file cannot be loaded after all fallback attempts
@@ -33,10 +49,18 @@ def load_nifti_robust(filepath):
     raw_dtype = header.get_data_dtype()
     shape = header.get_data_shape()
     
+    # RGB / RGBA images (e.g. diffusion color maps): keep the colors, and use the
+    # mean of R, G and B as the gray value for everything that needs one value
+    if raw_dtype.names and {'R', 'G', 'B'} <= set(raw_dtype.names):
+        raw_data = np.asanyarray(nii.dataobj)
+        rgb = np.stack([raw_data[c] for c in 'RGB'], axis=-1).astype(np.uint8)
+        print("[NeuroMontage] RGB image: shown in color")
+        return nii, rgb.astype(np.float64).mean(axis=-1), rgb
+    
     # First attempt: standard get_fdata()
     try:
         data = nii.get_fdata()
-        return nii, data
+        return nii, data, None
     except TypeError as e:
         if 'void' in str(e) or 'DType' in str(e):
             print(f"[NeuroMontage] Warning: Non-standard data type ({raw_dtype}) in {filepath}")
@@ -59,7 +83,7 @@ def load_nifti_robust(filepath):
             else:
                 data = raw_data.view(base_dtype).astype(np.float64)
             print(f"[NeuroMontage] Successfully loaded with structured dtype handling")
-            return nii, data
+            return nii, data, None
         
         # Try to interpret void dtype
         raw_data = np.asarray(dataobj)
@@ -77,27 +101,27 @@ def load_nifti_robust(filepath):
             elif bytes_per_element == 3:
                 # RGB data
                 rgb_data = raw_data.view(np.uint8).reshape(shape + (3,))
-                data = np.mean(rgb_data, axis=-1)
-                print("[NeuroMontage] Converted RGB data to grayscale")
+                print("[NeuroMontage] RGB image: shown in color")
+                return nii, np.mean(rgb_data, axis=-1), rgb_data
             elif bytes_per_element == 4:
                 try:
                     data = raw_data.view(np.float32).reshape(shape).astype(np.float64)
                 except ValueError:
                     rgba_data = raw_data.view(np.uint8).reshape(shape + (4,))
-                    data = np.mean(rgba_data[..., :3], axis=-1)
-                    print("[NeuroMontage] Converted RGBA data to grayscale")
+                    print("[NeuroMontage] RGBA image: shown in color")
+                    return nii, np.mean(rgba_data[..., :3], axis=-1), rgba_data[..., :3]
             elif bytes_per_element == 8:
                 data = raw_data.view(np.float64).reshape(shape)
             else:
                 raise ValueError(f"Cannot interpret void dtype with {bytes_per_element} bytes/voxel")
             
             print(f"[NeuroMontage] Successfully loaded via void dtype interpretation")
-            return nii, data
+            return nii, data, None
         
         # Non-void but problematic - try direct conversion
         data = raw_data.astype(np.float64)
         print(f"[NeuroMontage] Successfully loaded via direct dtype conversion")
-        return nii, data
+        return nii, data, None
             
     except Exception as e2:
         print(f"[NeuroMontage] Fallback method 1 failed: {e2}")
@@ -106,7 +130,7 @@ def load_nifti_robust(filepath):
     try:
         data = np.asanyarray(nii.dataobj, dtype=np.float64)
         print(f"[NeuroMontage] Successfully loaded via explicit float64 conversion")
-        return nii, data
+        return nii, data, None
     except Exception as e3:
         print(f"[NeuroMontage] Fallback method 2 failed: {e3}")
     
@@ -115,7 +139,7 @@ def load_nifti_robust(filepath):
         nii = nib.Nifti1Image.from_filename(filepath)
         data = np.asarray(nii.dataobj).astype(np.float64)
         print(f"[NeuroMontage] Successfully loaded via Nifti1Image")
-        return nii, data
+        return nii, data, None
     except Exception as e4:
         print(f"[NeuroMontage] Fallback method 3 failed: {e4}")
     
@@ -206,16 +230,20 @@ def save_mosaic(image, output_file, fine_lines=False):
         output_file: Output path (.png, .jpg, .jpeg or .webp)
         fine_lines: True if the image has thin colored outlines
     
-    Raises:
-        ValueError: if the image is too large for WebP
+    Images larger than WebP allows are shrunk to fit.
     """
     ext = output_file.lower().rsplit('.', 1)[-1]
     if ext == 'png':
         image.save(output_file, format='PNG')
     elif ext == 'webp':
         if max(image.size) > WEBP_MAX_SIDE:
-            raise ValueError(f"[NeuroMontage] Image is {image.size[0]}×{image.size[1]} px. WebP allows at most "
-                             f"{WEBP_MAX_SIDE} px per side. Use a .png or .jpg output file instead.")
+            # Shrink to the WebP size limit (e.g. 4D images with many volumes)
+            factor = WEBP_MAX_SIDE / max(image.size)
+            new_size = (min(WEBP_MAX_SIDE, int(image.size[0] * factor)),
+                        min(WEBP_MAX_SIDE, int(image.size[1] * factor)))
+            print(f"[NeuroMontage] Image is {image.size[0]}×{image.size[1]} px, larger than WebP allows "
+                  f"({WEBP_MAX_SIDE} px per side). Shrinking to {new_size[0]}×{new_size[1]} px ({factor:.2f}x).")
+            image = image.resize(new_size, resample=Image.LANCZOS)
         if fine_lines:
             image.save(output_file, format='WEBP', lossless=True, method=6)
         else:

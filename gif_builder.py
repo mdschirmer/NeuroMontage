@@ -30,7 +30,7 @@ def create_gif(
     """
     Build and save an animation (.gif or animated .webp). Each frame is 800px tall.
     """
-    brain_nii, brain_data_full = load_nifti_robust(brain_file)
+    brain_nii, brain_data_full, brain_rgb = load_nifti_robust(brain_file, return_rgb=True)
     brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
     if len(brain_data_full.shape) == 4:
@@ -90,24 +90,24 @@ def create_gif(
     for slice_idx in valid_slices:
         base_slice = get_slice(brain_data_full, slice_idx)
         slice_h, slice_w = base_slice.shape
+        if brain_rgb is not None:
+            rgb_base = get_slice(brain_rgb, slice_idx) / 255.0
+        else:
+            rgb_base = colormaps['gray'](norm_brain(base_slice))[..., :3]
 
         if has_segmentation and not outline_mode:
             cum_slice = get_slice(cum_data_full, slice_idx)
             thr0 = thresholds[0]
             alpha_slice = np.where(cum_slice > thr0, alpha, 0.0)
 
-            base_norm = norm_brain(base_slice)
             overlay_norm = norm_overlay(cum_slice)
 
-            rgb_base = colormaps['gray'](base_norm)[..., :3]
             rgb_overlay = cmap(overlay_norm)[..., :3]
             frame_rgb = (rgb_overlay * alpha_slice[..., None] +
                         rgb_base * (1.0 - alpha_slice[..., None]))
             frame_uint8 = (frame_rgb * 255).astype(np.uint8)
 
         elif has_segmentation and outline_mode:
-            base_norm = norm_brain(base_slice)
-            rgb_base = colormaps['gray'](base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
             # Draw masks in order (solid first, dashed, dotted on top)
@@ -118,8 +118,6 @@ def create_gif(
                 draw_contours(frame_uint8, binary_slice, contour_colors[m_i], contour_patterns[m_i],
                               offsets=(-1, 0, 1))
         else:
-            base_norm = norm_brain(base_slice)
-            rgb_base = colormaps['gray'](base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
         # Add L/R labels
