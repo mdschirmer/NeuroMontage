@@ -7,7 +7,7 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from matplotlib.colors import Normalize, LogNorm
+from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import resize
 
@@ -16,7 +16,7 @@ from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_samp
                           MIN_SLICE_SIZE)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_normalization,
+                         calculate_robust_normalization, calculate_overlay_colors,
                          calculate_median_excluding_background, load_nifti_robust)
 
 # Increase PIL's image size limit
@@ -260,19 +260,7 @@ def create_super_mosaic_4d(
     # Prepare overlay normalization if needed
     if has_segmentation and not outline_mode:
         thr0 = thresholds[0]
-        if log_scale:
-            # Find positive values for log scaling
-            if seg_is_4d:
-                pos_vals = seg_data_full[seg_data_full > thr0]
-            else:
-                pos_vals = seg_data_full[seg_data_full > thr0]
-            if pos_vals.size == 0:
-                raise ValueError("No positive segmentation values above threshold for log scaling.")
-            norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
-        else:
-            # Colors start at the threshold, so every shown value is visible
-            norm_overlay = calculate_overlay_normalization(seg_data_full, thr0)
-        cmap = plt.get_cmap(colormap_name)
+        norm_overlay, cmap = calculate_overlay_colors(seg_data_full, thr0, colormap_name, log_scale)
     
     # Create RGB canvas
     canvas_rgb = np.zeros((canvas_height, canvas_width, 3), dtype=np.float32)

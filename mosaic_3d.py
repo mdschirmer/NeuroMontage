@@ -5,7 +5,6 @@
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 from PIL import Image
 from skimage.transform import resize
 
@@ -14,7 +13,7 @@ from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLIC
                           calculate_optimal_layout)
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_normalization, load_nifti_robust)
+                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -226,16 +225,7 @@ def create_mosaic(
     
     if has_segmentation and not outline_mode:
         thr0 = thresholds[0]
-        if log_scale:
-            # For log scale, still need to handle thresholding
-            pos_vals = cum_data_full[cum_data_full > thr0]
-            if pos_vals.size == 0:
-                raise ValueError("No positive cumulative-segmentation values above threshold for log scaling.")
-            norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
-        else:
-            # Colors start at the threshold, so every shown value is visible
-            norm_overlay = calculate_overlay_normalization(cum_data_full, thr0)
-        cmap = plt.get_cmap(colormap_name)
+        norm_overlay, cmap = calculate_overlay_colors(cum_data_full, thr0, colormap_name, log_scale)
     elif has_segmentation and outline_mode:
         contour_colors, contour_patterns = resolve_outline_styles(len(all_masks), outline_colors, line_styles)
 

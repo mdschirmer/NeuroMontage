@@ -5,7 +5,8 @@ Image processing utilities for NeuroMontage.
 import numpy as np
 import nibabel as nib
 import skimage.measure
-from matplotlib.colors import Normalize
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LogNorm, ListedColormap
 from skimage.transform import resize
 
 
@@ -366,25 +367,67 @@ def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percen
     return Normalize(vmin=vmin, vmax=vmax)
 
 
-def calculate_overlay_normalization(volume_data, threshold):
+# Okabe-Ito colors used for label overlays (black left out: not visible on a dark brain)
+MAX_OVERLAY_LABELS = 7
+
+
+class LabelNorm:
+    """Map each label value to the middle of its own color bin in a ListedColormap."""
+
+    def __init__(self, labels):
+        self.labels = np.asarray(labels, dtype=float)
+
+    def __call__(self, values):
+        idx = np.searchsorted(self.labels, np.asarray(values, dtype=float))
+        idx = np.clip(idx, 0, len(self.labels) - 1)
+        return (idx + 0.5) / len(self.labels)
+
+
+def calculate_overlay_colors(volume_data, threshold, colormap_name='viridis', log_scale=False):
     """
-    Color range for a segmentation overlay: from the threshold to the robust maximum.
+    Choose the colors for a segmentation overlay.
     
-    Values at or below the threshold are not shown, so every shown value gets a
-    color above the bottom of the colormap. For example, labels 1, 2, 3 with
-    threshold 0 map to 1/3, 2/3 and 1.
+    Only values above the threshold are shown. If those are whole numbers with at
+    most MAX_OVERLAY_LABELS distinct values (a label map), each label gets an
+    Okabe-Ito color. Labels 1-7 keep a fixed color (1 = orange, 2 = sky blue, ...);
+    other label values get colors in order of value. Otherwise the overlay is
+    continuous and uses the colormap, from max(threshold, robust minimum) to the
+    robust maximum (or a log scale).
     
     Args:
         volume_data: numpy array of overlay values (3D or 4D)
         threshold: Overlay threshold (values > threshold are shown)
+        colormap_name: Matplotlib colormap for continuous overlays
+        log_scale: Use logarithmic normalization (continuous overlays only)
     
     Returns:
-        Normalize: matplotlib Normalize object
+        tuple: (norm, cmap) - norm maps values to [0, 1], cmap maps [0, 1] to RGBA
     """
-    vmax = calculate_robust_normalization(volume_data).vmax
-    if vmax <= threshold:
-        vmax = threshold + 1
-    return Normalize(vmin=threshold, vmax=vmax)
+    shown = volume_data[volume_data > threshold]
+    
+    if not log_scale and shown.size > 0:
+        labels = np.unique(shown)
+        if len(labels) <= MAX_OVERLAY_LABELS and np.all(labels == np.round(labels)):
+            palette = get_contour_colors()[:MAX_OVERLAY_LABELS]
+            if labels.min() >= 1 and labels.max() <= MAX_OVERLAY_LABELS:
+                colors = [palette[int(v) - 1] for v in labels]
+            else:
+                colors = palette[:len(labels)]
+            print(f"[NeuroMontage] Overlay: {len(labels)} label(s), Okabe-Ito colors")
+            return LabelNorm(labels), ListedColormap(np.array(colors) / 255.0)
+    
+    cmap = plt.get_cmap(colormap_name)
+    if log_scale:
+        if shown.size == 0:
+            raise ValueError("No positive segmentation values above threshold for log scaling.")
+        return LogNorm(vmin=shown.min(), vmax=shown.max()), cmap
+    
+    robust = calculate_robust_normalization(volume_data)
+    vmin = max(threshold, robust.vmin)
+    vmax = robust.vmax
+    if vmax <= vmin:
+        vmax = vmin + 1
+    return Normalize(vmin=vmin, vmax=vmax), cmap
 
 
 def calculate_median_excluding_background(volume_data):

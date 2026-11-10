@@ -7,7 +7,7 @@ Create publication-ready **mosaic images** *or* **animated GIFs** of brain slice
 | Mode | What it does | Typical use-case |
 |------|--------------|------------------|
 | **Brain-only** (no segmentation) | Display structural brain images in an optimal grid layout | Quick quality checks, anatomical reference images |
-| **Overlay** (single segmentation file) | Renders a cumulative segmentation volume as a semi-transparent colormap on top of T1/T2 anatomy | Visualize lesion load, probabilistic maps, heat-maps |
+| **Overlay** (single segmentation file) | Renders a segmentation volume semi-transparent on top of T1/T2 anatomy: label maps (up to 7 whole-number values) in Okabe-Ito colors, other maps with a colormap | Visualize lesion load, probabilistic maps, heat-maps |
 | **Outline** (multiple masks **or** `--outline` flag) | Draws colored contours for one or more binary lesion masks | Compare multiple lesion masks, multi-time-point studies, algorithm evaluation |
 | **Alternating** (`--alternate` flag) | Alternates rows between brain-only and brain+overlay views | Side-by-side comparison of anatomy with and without overlay |
 
@@ -196,7 +196,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--alpha VAL` | Overlay opacity (0-1, overlay mode only) | `0.7` |
-| `--colormap NAME` | Matplotlib colormap (overlay mode only) | `viridis` |
+| `--colormap NAME` | Matplotlib colormap (overlay mode, continuous maps; label maps with up to 7 values use Okabe-Ito colors) | `viridis` |
 | `--log_scale` | Log-scale color mapping (overlay mode only) | off |
 | `--threshold T [T ...]` | Single or per-mask threshold values | `0.0` |
 

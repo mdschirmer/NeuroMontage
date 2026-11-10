@@ -5,12 +5,11 @@ GIF animation creation for NeuroMontage.
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 from PIL import Image
 
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_normalization, load_nifti_robust)
+                         calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust)
 
 
 def create_gif(
@@ -58,15 +57,7 @@ def create_gif(
             norm_brain = calculate_robust_normalization(brain_data_full)
             
             thr0 = thresholds[0]
-            if log_scale:
-                pos_vals = cum_data_full[cum_data_full > thr0]
-                if pos_vals.size == 0:
-                    raise ValueError("No positive cumulative-segmentation values above threshold for log scaling.")
-                norm_overlay = LogNorm(vmin=pos_vals.min(), vmax=pos_vals.max())
-            else:
-                # Colors start at the threshold, so every shown value is visible
-                norm_overlay = calculate_overlay_normalization(cum_data_full, thr0)
-            cmap = plt.get_cmap(colormap_name)
+            norm_overlay, cmap = calculate_overlay_colors(cum_data_full, thr0, colormap_name, log_scale)
 
         else:
             all_masks = []
