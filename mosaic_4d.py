@@ -4,8 +4,7 @@ Each volume is displayed in a single row, with optional segmentation overlays.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import font_manager
+from matplotlib import colormaps
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import resize
@@ -26,6 +25,7 @@ Image.MAX_IMAGE_PIXELS = None
 
 def load_label_font(size_px):
     """Font for the volume labels (DejaVu Sans, shipped with matplotlib)."""
+    from matplotlib import font_manager  # imported here: only 4D mosaics need it
     return ImageFont.truetype(font_manager.findfont('DejaVu Sans'), max(1, int(round(size_px))))
 
 
@@ -284,8 +284,7 @@ def create_super_mosaic_4d(
         volume_data = brain_data_4d[:, :, :, vol_idx]
         
         # Per-volume normalization for brain
-        vol_min = np.percentile(volume_data, 5)
-        vol_max = np.percentile(volume_data, 99.99)
+        vol_min, vol_max = np.percentile(volume_data, [5, 99.99])
         if vol_max > vol_min:
             vol_norm = Normalize(vmin=vol_min, vmax=vol_max)
         else:
@@ -327,7 +326,7 @@ def create_super_mosaic_4d(
                 brain_slice_scaled = brain_slice
             
             brain_slice_norm = vol_norm(brain_slice_scaled)
-            rgb_brain = plt.cm.gray(brain_slice_norm)[..., :3]
+            rgb_brain = colormaps['gray'](brain_slice_norm)[..., :3]
             
             # Calculate column position
             col_x_start = slice_count * scaled_slice_w

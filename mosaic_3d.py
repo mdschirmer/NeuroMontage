@@ -3,7 +3,7 @@
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from PIL import Image
 from skimage.transform import resize
 
@@ -311,17 +311,17 @@ def create_mosaic(
     # Build final composite
     if has_segmentation and not outline_mode:
         rgb_overlay = cmap(overlay_canvas)[..., :3]
-        rgb_base = plt.cm.gray(base_canvas)[..., :3]
+        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite = (rgb_overlay * alpha_mask[..., None] +
                      rgb_base * (1.0 - alpha_mask[..., None]))
         composite_uint8 = (composite * 255).astype(np.uint8)
     elif has_segmentation and outline_mode:
-        rgb_base = plt.cm.gray(base_canvas)[..., :3]
+        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite_uint8 = (rgb_base * 255).astype(np.uint8)
         mask_idx = np.any(outline_canvas > 0, axis=2)
         composite_uint8[mask_idx] = outline_canvas[mask_idx]
     else:
-        rgb_base = plt.cm.gray(base_canvas)[..., :3]
+        rgb_base = colormaps['gray'](base_canvas)[..., :3]
         composite_uint8 = (rgb_base * 255).astype(np.uint8)
 
     # Highlight slices with segmentation

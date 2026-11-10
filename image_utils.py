@@ -4,8 +4,7 @@ Image processing utilities for NeuroMontage.
 
 import numpy as np
 import nibabel as nib
-import skimage.measure
-import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from matplotlib.colors import Normalize, LogNorm, ListedColormap
 
 
@@ -241,6 +240,7 @@ def find_contours_on_slice(binary_slice):
     Given a 2D binary array `binary_slice` (values 0 or 1), find contours at threshold = 0.5.
     Returns a list of (N_i × 2) arrays of (row, col) floats.
     """
+    import skimage.measure  # imported here: only outline mode needs it
     return skimage.measure.find_contours(binary_slice, 0.5)
 
 
@@ -365,16 +365,23 @@ def draw_contours(target, binary_slice, color, pattern_index, offsets=(0, 1)):
         offsets: Pixel offsets that set the line thickness, e.g. (0, 1) = 2 px
     """
     h, w = target.shape[:2]
+    pattern_length, on_length = get_line_pattern(pattern_index)
+
+    # Points to draw: keep the "on" part of the dash pattern along each contour
+    points = []
     for contour in find_contours_on_slice(binary_slice):
-        for pt_idx, (r, c) in enumerate(contour):
-            if not should_draw_pixel(pt_idx, pattern_index):
-                continue
-            rr = int(round(r))
-            cc = int(round(c))
-            for dr in offsets:
-                for dc in offsets:
-                    if 0 <= rr + dr < h and 0 <= cc + dc < w:
-                        target[rr + dr, cc + dc, :] = color
+        keep = (np.arange(len(contour)) % pattern_length) < on_length
+        points.append(contour[keep])
+    if not points:
+        return
+    points = np.round(np.concatenate(points)).astype(int)  # round half to even, like round()
+
+    # Thicken: add every (dr, dc) offset to every point, then drop pixels outside
+    dr, dc = np.meshgrid(offsets, offsets, indexing='ij')
+    rows = (points[:, 0:1] + dr.ravel()).ravel()
+    cols = (points[:, 1:2] + dc.ravel()).ravel()
+    inside = (rows >= 0) & (rows < h) & (cols >= 0) & (cols < w)
+    target[rows[inside], cols[inside]] = color
 
 
 def draw_border(target, width, color):
@@ -446,20 +453,17 @@ def resolve_outline_styles(n_masks, colors=None, line_styles=None):
     return rgb, patterns
 
 
-def should_draw_pixel(contour_index, mask_index):
+def _sorted_foreground(volume_data):
     """
-    Determine if a pixel should be drawn based on its position along the contour
-    and the mask's line pattern.
+    Sort all values once. Return them and the (sorted) values above the background.
     
-    Args:
-        contour_index: Index of this point along the contour (0, 1, 2, ...)
-        mask_index: Line pattern index (by default the mask's index)
-    
-    Returns:
-        bool: True if this pixel should be drawn
+    Background = the bottom 5% of unique intensity values. One sort gives the
+    unique values, the background cut-off and fast percentiles afterwards.
     """
-    pattern_length, on_length = get_line_pattern(mask_index)
-    return (contour_index % pattern_length) < on_length
+    values = np.sort(volume_data, axis=None)
+    unique_values = values[np.concatenate(([True], values[1:] != values[:-1]))]
+    threshold_5pct = np.percentile(unique_values, 5)
+    return values, values[np.searchsorted(values, threshold_5pct, side='right'):]
 
 
 def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percentile=99.99):
@@ -484,23 +488,18 @@ def calculate_robust_normalization(volume_data, lower_percentile=1, upper_percen
         >>> normalized_slice = norm(brain_data[:, :, 50])
     """
     # Exclude background by removing the bottom 5% of unique intensity values
-    unique_values = np.unique(volume_data)
-    threshold_5pct = np.percentile(unique_values, 5)
-    brain_voxels = volume_data[volume_data > threshold_5pct]
+    values, brain_voxels = _sorted_foreground(volume_data)
     
     if brain_voxels.size > 0:
         # Calculate robust bounds from non-background voxels
-        vmin = np.percentile(brain_voxels, lower_percentile)
-        vmax = np.percentile(brain_voxels, upper_percentile)
+        vmin, vmax = np.percentile(brain_voxels, [lower_percentile, upper_percentile])
     else:
         # Fallback if no voxels above threshold (shouldn't happen in practice)
-        vmin = np.min(volume_data)
-        vmax = np.max(volume_data)
+        vmin, vmax = values[0], values[-1]
     
     # Too few distinct values (e.g. a binary mask): use the full value range
     if vmax <= vmin:
-        vmin = np.min(volume_data)
-        vmax = np.max(volume_data)
+        vmin, vmax = values[0], values[-1]
     
     # Ensure vmax > vmin to avoid division by zero
     if vmax <= vmin:
@@ -548,9 +547,11 @@ def calculate_overlay_colors(volume_data, threshold, colormap_name=None, log_sca
     """
     shown = volume_data[volume_data > threshold]
     
-    if colormap_name is None and not log_scale and shown.size > 0:
+    # Label maps have whole-number values only; check that first (cheap) before unique()
+    if (colormap_name is None and not log_scale and shown.size > 0
+            and np.all(shown == np.round(shown))):
         labels = np.unique(shown)
-        if len(labels) <= MAX_OVERLAY_LABELS and np.all(labels == np.round(labels)):
+        if len(labels) <= MAX_OVERLAY_LABELS:
             palette = get_contour_colors()[:MAX_OVERLAY_LABELS]
             if labels.min() >= 1 and labels.max() <= MAX_OVERLAY_LABELS:
                 colors = [palette[int(v) - 1] for v in labels]
@@ -559,7 +560,7 @@ def calculate_overlay_colors(volume_data, threshold, colormap_name=None, log_sca
             print(f"[NeuroMontage] Overlay: {len(labels)} label(s), Okabe-Ito colors")
             return LabelNorm(labels), ListedColormap(np.array(colors) / 255.0)
     
-    cmap = plt.get_cmap(colormap_name or 'viridis')
+    cmap = colormaps[colormap_name or 'viridis']
     if log_scale:
         if shown.size == 0:
             raise ValueError("No positive segmentation values above threshold for log scaling.")
@@ -591,9 +592,7 @@ def calculate_median_excluding_background(volume_data):
         >>> median = calculate_median_excluding_background(brain_data)
     """
     # Exclude background by removing the bottom 5% of unique intensity values
-    unique_values = np.unique(volume_data)
-    threshold_5pct = np.percentile(unique_values, 5)
-    brain_voxels = volume_data[volume_data > threshold_5pct]
+    _, brain_voxels = _sorted_foreground(volume_data)
     
     if brain_voxels.size > 0:
         return np.median(brain_voxels)

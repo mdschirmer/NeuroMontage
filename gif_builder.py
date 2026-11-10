@@ -3,7 +3,7 @@ Animation (GIF or WebP) creation for NeuroMontage.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from PIL import Image
 
 from image_utils import (get_slice, generate_lr_labels,
@@ -99,7 +99,7 @@ def create_gif(
             base_norm = norm_brain(base_slice)
             overlay_norm = norm_overlay(cum_slice)
 
-            rgb_base = plt.cm.gray(base_norm)[..., :3]
+            rgb_base = colormaps['gray'](base_norm)[..., :3]
             rgb_overlay = cmap(overlay_norm)[..., :3]
             frame_rgb = (rgb_overlay * alpha_slice[..., None] +
                         rgb_base * (1.0 - alpha_slice[..., None]))
@@ -107,7 +107,7 @@ def create_gif(
 
         elif has_segmentation and outline_mode:
             base_norm = norm_brain(base_slice)
-            rgb_base = plt.cm.gray(base_norm)[..., :3]
+            rgb_base = colormaps['gray'](base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
             # Draw masks in order (solid first, dashed, dotted on top)
@@ -119,7 +119,7 @@ def create_gif(
                               offsets=(-1, 0, 1))
         else:
             base_norm = norm_brain(base_slice)
-            rgb_base = plt.cm.gray(base_norm)[..., :3]
+            rgb_base = colormaps['gray'](base_norm)[..., :3]
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
         # Add L/R labels

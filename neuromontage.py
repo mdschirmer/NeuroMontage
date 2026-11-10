@@ -41,8 +41,8 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.18"
-__date__ = "2026-11-09"
+__version__ = "2.3.0.19"
+__date__ = "2026-11-10"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"
@@ -51,9 +51,6 @@ import argparse
 import os
 import sys
 import nibabel as nib
-from mosaic_3d import create_mosaic
-from mosaic_4d import create_super_mosaic_4d
-from gif_builder import create_gif
 
 
 def parse_args():
@@ -214,6 +211,7 @@ def main():
             return 1
         
         print("[NeuroMontage] Creating animation...")
+        from gif_builder import create_gif
         create_gif(
             brain_file=args.brain_file,
             input_files=args.input_files,
@@ -231,6 +229,7 @@ def main():
     else:
         if len(brain_shape) == 4:
             print("[NeuroMontage] Creating 4D super mosaic...")
+            from mosaic_4d import create_super_mosaic_4d
             if args.resolution == 'auto':
                 print("[NeuroMontage] Note: In auto mode, adaptive sampling may be applied to maintain quality.")
             
@@ -251,6 +250,7 @@ def main():
             )
         else:
             print("[NeuroMontage] Creating 3D mosaic...")
+            from mosaic_3d import create_mosaic
             if args.resolution == 'auto':
                 print("[NeuroMontage] Note: Auto resolution mode may adaptively sample slices for large datasets.")
             create_mosaic(
