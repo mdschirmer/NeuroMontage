@@ -94,9 +94,11 @@ def create_super_mosaic_4d(
         if any(slice_has_content(brain_data_4d[:, :, k, v]) for v in range(n_volumes))
     ]
     if not kept_positions:
-        raise ValueError(f"No slices with image content: every slice is constant in all volumes "
-                         f"(e.g. all 0 or all NaN). Image shape: {brain_data_4d.shape}.")
-    if len(kept_positions) < brain_data_4d.shape[2]:
+        # Empty image: show the slices as they are (one uniform color)
+        print(f"[NeuroMontage] Warning: no slices with image content: every slice is constant in all volumes "
+              f"(e.g. all 0 or all NaN). Image shape: {brain_data_4d.shape}. Saving the slices as they are.")
+        kept_positions = list(range(brain_data_4d.shape[2]))
+    elif len(kept_positions) < brain_data_4d.shape[2]:
         print(f"[NeuroMontage] 4D: showing {len(kept_positions)} of {brain_data_4d.shape[2]} slice positions "
               f"({brain_data_4d.shape[2] - len(kept_positions)} empty in all volumes)")
     n_slices_per_volume = len(kept_positions)

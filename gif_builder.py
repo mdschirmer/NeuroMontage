@@ -88,8 +88,10 @@ def create_gif(
         if slice_has_content(brain_data_full[:, :, i])
     ]
     if not valid_slices:
-        raise ValueError(f"No slices with image content: every slice is constant "
-                         f"(e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}.")
+        # Empty image: show the slices as they are (one uniform color)
+        print(f"[NeuroMontage] Warning: no slices with image content: every slice is constant "
+              f"(e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}. Saving the slices as they are.")
+        valid_slices = list(range(brain_data_full.shape[2]))
 
     images = []
     

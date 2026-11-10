@@ -115,12 +115,15 @@ def create_mosaic(
         idx for idx in range(start_slice, end_slice + 1)
         if slice_has_content(brain_data_full[:, :, idx])
     ]
+    if not valid_slices:
+        # Empty image: show the slices as they are (one uniform color)
+        print(f"[NeuroMontage] Warning: no slices with image content between indices {start_slice} and "
+              f"{end_slice}: every slice is constant (e.g. all 0 or all NaN). Image shape: "
+              f"{brain_data_full.shape}. Saving the slices as they are.")
+        valid_slices = list(range(start_slice, end_slice + 1))
     
     # Apply user-specified slice_step first
     used_slices = valid_slices[::slice_step]
-    if not used_slices:
-        raise ValueError(f"No slices with image content between indices {start_slice} and {end_slice}: "
-                         f"every slice is constant (e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}.")
 
     # Get slice dimensions for resolution calculation
     example_slice = get_slice(brain_data_full, used_slices[0])
