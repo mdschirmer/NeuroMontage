@@ -383,12 +383,12 @@ class LabelNorm:
         return (idx + 0.5) / len(self.labels)
 
 
-def calculate_overlay_colors(volume_data, threshold, colormap_name='viridis', log_scale=False):
+def calculate_overlay_colors(volume_data, threshold, colormap_name=None, log_scale=False):
     """
     Choose the colors for a segmentation overlay.
     
-    Only values above the threshold are shown. If those are whole numbers with at
-    most MAX_OVERLAY_LABELS distinct values (a label map), each label gets an
+    Only values above the threshold are shown. If no colormap is given and those
+    are whole numbers with at most MAX_OVERLAY_LABELS distinct values (a label map), each label gets an
     Okabe-Ito color. Labels 1-7 keep a fixed color (1 = orange, 2 = sky blue, ...);
     other label values get colors in order of value. Otherwise the overlay is
     continuous and uses the colormap, from max(threshold, robust minimum) to the
@@ -397,7 +397,8 @@ def calculate_overlay_colors(volume_data, threshold, colormap_name='viridis', lo
     Args:
         volume_data: numpy array of overlay values (3D or 4D)
         threshold: Overlay threshold (values > threshold are shown)
-        colormap_name: Matplotlib colormap for continuous overlays
+        colormap_name: Matplotlib colormap. None = Okabe-Ito for label maps, viridis
+                       otherwise. If given, it is used for label maps too.
         log_scale: Use logarithmic normalization (continuous overlays only)
     
     Returns:
@@ -405,7 +406,7 @@ def calculate_overlay_colors(volume_data, threshold, colormap_name='viridis', lo
     """
     shown = volume_data[volume_data > threshold]
     
-    if not log_scale and shown.size > 0:
+    if colormap_name is None and not log_scale and shown.size > 0:
         labels = np.unique(shown)
         if len(labels) <= MAX_OVERLAY_LABELS and np.all(labels == np.round(labels)):
             palette = get_contour_colors()[:MAX_OVERLAY_LABELS]
@@ -416,7 +417,7 @@ def calculate_overlay_colors(volume_data, threshold, colormap_name='viridis', lo
             print(f"[NeuroMontage] Overlay: {len(labels)} label(s), Okabe-Ito colors")
             return LabelNorm(labels), ListedColormap(np.array(colors) / 255.0)
     
-    cmap = plt.get_cmap(colormap_name)
+    cmap = plt.get_cmap(colormap_name or 'viridis')
     if log_scale:
         if shown.size == 0:
             raise ValueError("No positive segmentation values above threshold for log scaling.")

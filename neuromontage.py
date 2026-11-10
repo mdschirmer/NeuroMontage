@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.11"
+__version__ = "2.3.0.12"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -154,8 +154,10 @@ def parse_args():
         help='Overlay transparency [0..1] (only in single-input overlay mode). Default=0.7'
     )
     parser.add_argument(
-        '--colormap', type=str, default='viridis',
-        help='Matplotlib colormap for the segmentation overlay (only in single-input overlay mode). Default=viridis'
+        '--colormap', type=str, default=None,
+        help=('Matplotlib colormap for the segmentation overlay (only in single-input overlay mode). '
+              'Default: Okabe-Ito colors for label maps (up to 7 whole-number values), viridis otherwise. '
+              'If set, it is also used for label maps.')
     )
     parser.add_argument(
         '--log_scale', action='store_true',

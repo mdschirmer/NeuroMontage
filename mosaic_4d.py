@@ -35,7 +35,7 @@ def create_super_mosaic_4d(
     resolution='auto',
     thresholds=None,
     alpha=0.7,
-    colormap_name='viridis',
+    colormap_name=None,
     log_scale=False,
     outline=False,
     highlight=False,

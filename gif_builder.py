@@ -18,7 +18,7 @@ def create_gif(
     output_file,
     gif_duration=10.0,
     alpha=0.7,
-    colormap_name='viridis',
+    colormap_name=None,
     log_scale=False,
     thresholds=None,
     outline=False,

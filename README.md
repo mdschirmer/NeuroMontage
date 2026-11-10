@@ -196,7 +196,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--alpha VAL` | Overlay opacity (0-1, overlay mode only) | `0.7` |
-| `--colormap NAME` | Matplotlib colormap (overlay mode, continuous maps; label maps with up to 7 values use Okabe-Ito colors) | `viridis` |
+| `--colormap NAME` | Matplotlib colormap (overlay mode only). If set, it is also used for label maps | Okabe-Ito for label maps (up to 7 values), else `viridis` |
 | `--log_scale` | Log-scale color mapping (overlay mode only) | off |
 | `--threshold T [T ...]` | Single or per-mask threshold values | `0.0` |
 
