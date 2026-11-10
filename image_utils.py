@@ -199,14 +199,14 @@ def save_mosaic(image, output_file, fine_lines=False):
     
     - .png:  lossless
     - .jpg / .jpeg: quality 95, full-resolution color (4:4:4), so thin colored
-      lines (outlines, highlight borders) keep their color
+      outlines keep their color
     - .webp: quality 95; lossless if fine_lines is True, because lossy WebP always
-      stores color at half resolution and would smear thin colored lines
+      stores color at half resolution and would smear the outline colors
     
     Args:
         image: PIL Image (RGB)
         output_file: Output path (.png, .jpg, .jpeg or .webp)
-        fine_lines: True if the image has thin colored lines (outlines, highlight borders)
+        fine_lines: True if the image has thin colored outlines
     
     Raises:
         ValueError: if the image is too large for WebP

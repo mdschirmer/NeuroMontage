@@ -312,7 +312,7 @@ When you provide a 4D NIfTI file (e.g., diffusion, fMRI, or multi-echo data), Ne
 
 ### File Sizes
 * JPEG mosaics use quality 95 with full-resolution color, so thin outlines keep their color
-* WebP mosaics (`.webp`) are about 45% smaller than JPEG at the same quality; they are lossless when outlines or highlight borders are drawn
+* WebP mosaics (`.webp`) are about 45% smaller than JPEG at the same quality; they are lossless when outlines are drawn
 * PNG mosaics are lossless
 * GIFs are resized to 800px height to keep file sizes manageable
 * For very large datasets, consider using `--slice_step` or letting auto mode handle sampling

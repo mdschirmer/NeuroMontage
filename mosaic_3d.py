@@ -435,6 +435,6 @@ def create_mosaic(
                   f"{resolution.upper()}. Not padded to {out_w}×{out_h}.")
 
     # Save - use format based on extension
-    fine_lines = has_segmentation and (outline_mode or highlight)
+    fine_lines = has_segmentation and outline_mode
     save_mosaic(Image.fromarray(composite_uint8), output_file, fine_lines=fine_lines)
     print(f"[NeuroMontage] Mosaic saved to {output_file}")

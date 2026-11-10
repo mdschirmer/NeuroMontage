@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.15"
+__version__ = "2.3.0.16"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -104,7 +104,7 @@ def parse_args():
     parser.add_argument(
         '-o', '--output_file', type=str, required=True,
         help=('Output file path: .jpg, .jpeg, .png or .webp for a mosaic, .gif for an animated GIF. '
-              '.webp gives the smallest files (lossless when outlines or highlight borders are drawn).')
+              '.webp gives the smallest files (lossless when outlines are drawn).')
     )
     parser.add_argument(
         '--resolution', type=str, default='auto',

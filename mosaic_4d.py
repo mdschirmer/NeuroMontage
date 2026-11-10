@@ -513,7 +513,7 @@ def create_super_mosaic_4d(
         draw.text((x0 - label_gap, y_center), label, fill=(0, 0, 0), font=label_font, anchor='rm')
     
     # Save - use format based on extension
-    fine_lines = has_segmentation and (outline_mode or highlight)
+    fine_lines = has_segmentation and outline_mode
     save_mosaic(frame, output_file, fine_lines=fine_lines)
     print(f"[NeuroMontage] 4D mosaic saved to {output_file}")
 
