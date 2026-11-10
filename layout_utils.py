@@ -22,9 +22,13 @@ MIN_SLICE_SIZE = 100  # Minimum slice dimension (both 3D and 4D)
 def max_upscale(slice_h, slice_w):
     """
     Whole-number upscale factor that brings the smaller slice side to MIN_SLICE_SIZE.
-    Returns 1 (no upscaling) for slices that are already large enough.
+    Returns 1 (no upscaling) for slices that are already large enough. The factor
+    is limited so that one enlarged slice still fits the maximum output size
+    (important for very elongated slices).
     """
-    return max(1, int(np.ceil(MIN_SLICE_SIZE / min(slice_h, slice_w))))
+    factor = int(np.ceil(MIN_SLICE_SIZE / min(slice_h, slice_w)))
+    factor = min(factor, MAX_WIDTH // slice_w, MAX_HEIGHT_3D // slice_h)
+    return max(1, factor)
 
 
 def limit_scale(scale, slice_h, slice_w):
@@ -131,8 +135,9 @@ def calculate_auto_resolution_and_sampling(n_slices, slice_h, slice_w, is_4d=Fal
         TARGET_ASPECT = 16 / 9  # ~1.78
         
         # Calculate max slices that fit at native scale
-        max_cols = int(MAX_WIDTH / slice_w)
-        max_rows = int(MAX_HEIGHT_3D / slice_h)
+        # At least one slice per row/column (larger slices are scaled down below)
+        max_cols = max(1, int(MAX_WIDTH / slice_w))
+        max_rows = max(1, int(MAX_HEIGHT_3D / slice_h))
         max_slices_at_native = max_cols * max_rows
         
         if n_slices > max_slices_at_native:

@@ -272,39 +272,110 @@ def find_contours_on_slice(binary_slice):
     return skimage.measure.find_contours(binary_slice, 0.5)
 
 
-def generate_lr_labels():
+def display_layout(shape, affine):
     """
-    Generate two 25×25 "L" and "R" binary masks (values 0 or 255) for orientation labels.
+    How to show a volume: slice axis, plane and in-plane orientation.
+    
+    - Slice axis: an axis of length 1 (the volume is one 2D image), else axis 2
+      (the acquired slice order in scanner-converted data).
+    - Plane: from the direction of the slice axis (S/I = axial, A/P = coronal,
+      L/R = sagittal). Slices are ordered inferior to superior, posterior to
+      anterior, or left to right.
+    - Display (neurological convention): axial with anterior up and patient's
+      left on the image left; coronal with superior up and left on the left;
+      sagittal with superior up and anterior on the left.
+    
+    Args:
+        shape: Array shape (the first three axes are spatial)
+        affine: NIfTI affine
+    
+    Returns:
+        dict: perm (axis order), flips (axes to flip, after perm), plane,
+              labels (text left and right of the image)
     """
+    spatial = shape[:3]
+    singles = [a for a in range(3) if spatial[a] == 1]
+    slice_axis = 2 if (not singles or 2 in singles) else singles[0]
+    
+    codes = nib.aff2axcodes(affine)
+    if None in codes:
+        # No usable orientation in the affine: show the data as stored
+        return dict(perm=(0, 1, 2), flips=(), plane='axial', labels=('L', 'R'))
+    
+    slice_code = codes[slice_axis]
+    if slice_code in 'SI':
+        plane, horizontal, vertical, labels = 'axial', 'R', 'A', ('L', 'R')
+    elif slice_code in 'AP':
+        plane, horizontal, vertical, labels = 'coronal', 'R', 'S', ('L', 'R')
+    else:
+        plane, horizontal, vertical, labels = 'sagittal', 'P', 'S', ('A', 'P')
+    
+    # get_slice() shows axis 0 left to right and axis 1 bottom to top, so put the
+    # horizontal axis first (increasing to the right of the image) and the vertical
+    # axis second (increasing to the top of the image)
+    opposite = {'R': 'L', 'L': 'R', 'A': 'P', 'P': 'A', 'S': 'I', 'I': 'S'}
+    in_plane = [a for a in range(3) if a != slice_axis]
+    h_axis = next((a for a in in_plane if codes[a] in (horizontal, opposite[horizontal])), in_plane[0])
+    v_axis = next((a for a in in_plane if a != h_axis), in_plane[1])
+    flips = tuple(i for i, (axis, target) in enumerate([(h_axis, horizontal), (v_axis, vertical)])
+                  if codes[axis] != target)
+    # Slice order: always toward R, A or S (inferior to superior for axial slices)
+    if codes[slice_axis] not in 'RAS':
+        flips += (2,)
+    return dict(perm=(h_axis, v_axis, slice_axis), flips=flips, plane=plane, labels=labels)
+
+
+def to_display(data, layout):
+    """
+    Reorder and flip the spatial axes of a volume (3D, 4D, or RGB with a last
+    color axis) so that slicing along axis 2 with get_slice() gives the
+    conventional view (see display_layout).
+    """
+    perm = list(layout['perm']) + list(range(3, data.ndim))
+    data = np.transpose(data, perm)
+    for axis in layout['flips']:
+        data = np.flip(data, axis)
+    return data
+
+
+def _letter_bitmaps():
+    """Hand-drawn 50×50 letters (values 0 or 255)."""
     L = np.zeros((50, 50), dtype=np.uint8)
     L[5:45, 10:15] = 255
     L[40:45, 15:35] = 255
 
     R = np.zeros((50, 50), dtype=np.uint8)
-    R[5:45, 10:15] = 255
-    R[5:10, 15:27] = 255
-    R[20:25, 15:27] = 255
-    for i in range(8):
-        R[5 + i : 10 + i, 27 + i : 31 + i] = 255
-        R[20 - i : 25 - i, 27 + i : 31 + i] = 255
+    P = np.zeros((50, 50), dtype=np.uint8)
+    for letter in (R, P):
+        letter[5:45, 10:15] = 255
+        letter[5:10, 15:27] = 255
+        letter[20:25, 15:27] = 255
+        for i in range(8):
+            letter[5 + i : 10 + i, 27 + i : 31 + i] = 255
+            letter[20 - i : 25 - i, 27 + i : 31 + i] = 255
     R[25:27, 15:25] = 255
     for i in range(21):
         R[21 + i : 25 + i, 15 + i : 20 + i] = 255
 
-    return L[::2, ::2], R[::2, ::2]
+    A = np.zeros((50, 50), dtype=np.uint8)
+    for r in range(5, 45):
+        t = (r - 5) / 39
+        left_x, right_x = round(20 - 12 * t), round(20 + 12 * t)
+        A[r, left_x:left_x + 5] = 255
+        A[r, right_x:right_x + 5] = 255
+        if 28 <= r < 33:
+            A[r, left_x + 5:right_x] = 255
+    return {'L': L, 'R': R, 'A': A, 'P': P}
 
 
-def get_orientation(affine):
+def generate_orientation_labels(layout):
     """
-    Determine orientation (L-R or R-L) from NIfTI affine matrix.
-    
-    Args:
-        affine: NIfTI affine matrix
-    
-    Returns:
-        str: 'L-R' or 'R-L'
+    Two 25×25 letter masks (values 0 or 255) for the left and right side of the
+    image: "L"/"R" for axial and coronal, "A"/"P" for sagittal.
     """
-    return 'R-L' if affine[0, 0] < 0 else 'L-R'
+    letters = _letter_bitmaps()
+    left, right = layout['labels']
+    return letters[left][::2, ::2], letters[right][::2, ::2]
 
 
 def get_contour_colors():

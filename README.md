@@ -19,7 +19,8 @@ Additional features:
 * **Slice highlighting** (`--highlight`) – Adds a red border around slices containing lesion voxels
 * **Flexible slice selection** – Choose start/end indices and subsampling step
 * **Animations** (`--animate`, GIF or WebP) – Auto-resized to 800px height for manageable file sizes
-* **L/R orientation labels** – Automatically stamped on every output
+* **Slices in their own plane** – Axial, coronal and sagittal series are shown upright in the neurological convention (patient's left on the image left; sagittal: anterior left). Single 2D images (e.g. one sagittal slice) are shown as one image
+* **Orientation labels** – L/R (axial, coronal) or A/P (sagittal), stamped on every output
 * **RGB images** (e.g. diffusion color maps) – Shown in color in 3D mosaics and animations
 
 ---

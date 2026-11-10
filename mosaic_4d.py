@@ -12,8 +12,8 @@ from skimage.transform import resize
 from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling,
                           limit_scale, max_upscale,
                           MIN_SLICE_SIZE)
-from image_utils import (get_slice, generate_lr_labels,
-                         get_orientation, resolve_outline_styles,
+from image_utils import (get_slice, generate_orientation_labels, display_layout, to_display,
+                         resolve_outline_styles,
                          calculate_overlay_colors,
                          calculate_median_excluding_background, load_nifti_robust,
                          fill_non_finite, slice_has_content, save_mosaic, prepare_thresholds,
@@ -77,6 +77,11 @@ def create_super_mosaic_4d(
     if len(brain_data_4d.shape) != 4:
         raise ValueError("create_super_mosaic_4d only supports 4D data.")
     
+    # Show the slices in their own plane (axial, coronal, sagittal), upright
+    layout = display_layout(brain_data_4d.shape, brain_nii.affine)
+    brain_data_4d = to_display(brain_data_4d, layout)
+    print(f"[NeuroMontage] Showing {layout['plane']} slices")
+    
     slice_h, slice_w = get_slice(brain_data_4d[..., 0], 0).shape
     n_volumes = brain_data_4d.shape[3]
     
@@ -110,7 +115,7 @@ def create_super_mosaic_4d(
         if not outline_mode:
             # Single overlay mode
             _, seg_data_full = load_nifti_robust(input_files[0])
-            seg_data_full = fill_non_finite(seg_data_full, 'Overlay', ceiling=thresholds[0])
+            seg_data_full = to_display(fill_non_finite(seg_data_full, 'Overlay', ceiling=thresholds[0]), layout)
             
             seg_is_4d = len(seg_data_full.shape) == 4
             
@@ -131,7 +136,7 @@ def create_super_mosaic_4d(
             
             for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
-                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
+                seg_data = to_display(fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i]), layout)
                 
                 is_4d = len(seg_data.shape) == 4
                 masks_are_4d.append(is_4d)
@@ -249,8 +254,8 @@ def create_super_mosaic_4d(
     if resolution != 'auto':
         print(f"[NeuroMontage] Target was: {target_width}×{target_height} ({resolution.upper()})")
     
-    # Get orientation
-    orientation = get_orientation(brain_nii.affine)
+    # Orientation labels (L/R, or A/P for sagittal slices)
+    left_label, right_label = generate_orientation_labels(layout)
     
     # Calculate volume medians for intensity indicators
     volume_medians = []
@@ -411,7 +416,8 @@ def create_super_mosaic_4d(
             slices_width,
             scaled_slice_w,
             sampled_slices_per_volume,
-            orientation,
+            left_label,
+            right_label,
             scale
         )
     
@@ -472,9 +478,9 @@ def create_super_mosaic_4d(
 
 
 def add_lr_labels_to_row(canvas, row_y_start, row_y_end, slices_width, 
-                          scaled_slice_w, n_slices, orientation, scale):
+                          scaled_slice_w, n_slices, left_label, right_label, scale):
     """
-    Add L/R orientation labels to a single row.
+    Add orientation labels (L/R or A/P) to a single row.
     
     Args:
         canvas: The canvas array to modify (RGB float)
@@ -483,10 +489,10 @@ def add_lr_labels_to_row(canvas, row_y_start, row_y_end, slices_width,
         slices_width: Width of the slice area (not including intensity bar)
         scaled_slice_w: Width of each scaled slice
         n_slices: Number of slices in the row
-        orientation: 'L-R' or 'R-L'
+        left_label: Letter mask for the left side of the image
+        right_label: Letter mask for the right side of the image
         scale: Scaling factor used
     """
-    left_label, right_label = generate_lr_labels()
     
     # Scale labels appropriately
     label_scale = min(1.0, scale * 1.5)
@@ -524,40 +530,20 @@ def add_lr_labels_to_row(canvas, row_y_start, row_y_end, slices_width,
     # Calculate the position of the last slice in the row
     last_slice_x_end = n_slices * scaled_slice_w
     
-    # Place labels based on orientation
-    if orientation == 'L-R':
-        # Left label on the left side
-        if (row_y_start + pad + scaled_l_h <= row_y_end and 
-            pad + scaled_l_w <= slices_width):
-            label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
-                                  pad:pad + scaled_l_w, :]
-            label_mask = (left_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
-            canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
-                   pad:pad + scaled_l_w, :] = np.maximum(label_region, label_mask)
-        
-        # Right label on the right side
-        if (row_y_start + pad + scaled_r_h <= row_y_end and 
-            last_slice_x_end - pad - scaled_r_w >= 0):
-            label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
-                                  last_slice_x_end - pad - scaled_r_w:last_slice_x_end - pad, :]
-            label_mask = (right_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
-            canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
-                   last_slice_x_end - pad - scaled_r_w:last_slice_x_end - pad, :] = np.maximum(label_region, label_mask)
-    else:  # R-L orientation
-        # Right label on the left side
-        if (row_y_start + pad + scaled_r_h <= row_y_end and 
-            pad + scaled_r_w <= slices_width):
-            label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
-                                  pad:pad + scaled_r_w, :]
-            label_mask = (right_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
-            canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
-                   pad:pad + scaled_r_w, :] = np.maximum(label_region, label_mask)
-        
-        # Left label on the right side
-        if (row_y_start + pad + scaled_l_h <= row_y_end and 
-            last_slice_x_end - pad - scaled_l_w >= 0):
-            label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
-                                  last_slice_x_end - pad - scaled_l_w:last_slice_x_end - pad, :]
-            label_mask = (left_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
-            canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
-                   last_slice_x_end - pad - scaled_l_w:last_slice_x_end - pad, :] = np.maximum(label_region, label_mask)
+    # Left label on the left side
+    if (row_y_start + pad + scaled_l_h <= row_y_end and 
+        pad + scaled_l_w <= slices_width):
+        label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
+                              pad:pad + scaled_l_w, :]
+        label_mask = (left_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
+        canvas[row_y_start + pad:row_y_start + pad + scaled_l_h,
+               pad:pad + scaled_l_w, :] = np.maximum(label_region, label_mask)
+    
+    # Right label on the right side
+    if (row_y_start + pad + scaled_r_h <= row_y_end and 
+        last_slice_x_end - pad - scaled_r_w >= 0):
+        label_region = canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
+                              last_slice_x_end - pad - scaled_r_w:last_slice_x_end - pad, :]
+        label_mask = (right_label_scaled / 255.0 * label_intensity)[..., np.newaxis]
+        canvas[row_y_start + pad:row_y_start + pad + scaled_r_h,
+               last_slice_x_end - pad - scaled_r_w:last_slice_x_end - pad, :] = np.maximum(label_region, label_mask)

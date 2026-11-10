@@ -6,8 +6,8 @@ import numpy as np
 from matplotlib import colormaps
 from PIL import Image
 
-from image_utils import (get_slice, generate_lr_labels,
-                         get_orientation, resolve_outline_styles,
+from image_utils import (get_slice, generate_orientation_labels, display_layout, to_display,
+                         resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
                          fill_non_finite, slice_has_content, prepare_thresholds,
                          draw_contours, draw_border, segmentation_in_slice)
@@ -33,6 +33,13 @@ def create_gif(
     brain_nii, brain_data_full, brain_rgb = load_nifti_robust(brain_file, return_rgb=True)
     brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
+    # Show the slices in their own plane (axial, coronal, sagittal), upright
+    layout = display_layout(brain_data_full.shape, brain_nii.affine)
+    brain_data_full = to_display(brain_data_full, layout)
+    if brain_rgb is not None:
+        brain_rgb = to_display(brain_rgb, layout)
+    print(f"[NeuroMontage] Showing {layout['plane']} slices")
+    
     if len(brain_data_full.shape) == 4:
         raise ValueError("[NeuroMontage] GIF creation not supported for 4D data. Use mosaic mode instead.")
 
@@ -47,7 +54,7 @@ def create_gif(
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
-            cum_data_full = fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0])
+            cum_data_full = to_display(fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0]), layout)
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
 
@@ -61,7 +68,7 @@ def create_gif(
             all_masks = []
             for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
-                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
+                seg_data = to_display(fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i]), layout)
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape.")
                 all_masks.append(seg_data)
@@ -85,7 +92,6 @@ def create_gif(
                          f"(e.g. all 0 or all NaN). Image shape: {brain_data_full.shape}.")
 
     images = []
-    orientation = get_orientation(brain_nii.affine)
     
     for slice_idx in valid_slices:
         base_slice = get_slice(brain_data_full, slice_idx)
@@ -120,14 +126,10 @@ def create_gif(
         else:
             frame_uint8 = (rgb_base * 255).astype(np.uint8)
 
-        # Add L/R labels
-        left_label, right_label = generate_lr_labels()
+        # Add orientation labels (L/R, or A/P for sagittal slices)
+        left_label, right_label = generate_orientation_labels(layout)
         pad = 10
-        
-        if orientation == 'L-R':
-            placements = [(left_label, pad), (right_label, slice_w - pad - right_label.shape[1])]
-        else:
-            placements = [(right_label, pad), (left_label, slice_w - pad - left_label.shape[1])]
+        placements = [(left_label, pad), (right_label, slice_w - pad - right_label.shape[1])]
         
         # Blend the labels into the frame (keep the brighter pixel)
         for label, x0 in placements:

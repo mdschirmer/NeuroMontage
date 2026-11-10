@@ -10,8 +10,8 @@ from skimage.transform import resize
 from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLICE_SIZE,
                           calculate_auto_resolution_and_sampling,
                           calculate_optimal_layout)
-from image_utils import (get_slice, generate_lr_labels,
-                         get_orientation, resolve_outline_styles,
+from image_utils import (get_slice, generate_orientation_labels, display_layout, to_display,
+                         resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
                          fill_non_finite, slice_has_content, save_mosaic, prepare_thresholds,
                          draw_contours, draw_border, segmentation_in_slice)
@@ -53,6 +53,13 @@ def create_mosaic(
     brain_nii, brain_data_full, brain_rgb = load_nifti_robust(brain_file, return_rgb=True)
     brain_data_full = fill_non_finite(brain_data_full, 'Brain')
     
+    # Show the slices in their own plane (axial, coronal, sagittal), upright
+    layout = display_layout(brain_data_full.shape, brain_nii.affine)
+    brain_data_full = to_display(brain_data_full, layout)
+    if brain_rgb is not None:
+        brain_rgb = to_display(brain_rgb, layout)
+    print(f"[NeuroMontage] Showing {layout['plane']} slices")
+    
     # Validate 3D data
     if len(brain_data_full.shape) != 3:
         raise ValueError("create_mosaic only supports 3D data. Use create_super_mosaic_4d for 4D data.")
@@ -73,14 +80,14 @@ def create_mosaic(
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
-            cum_data_full = fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0])
+            cum_data_full = to_display(fill_non_finite(cum_data_full, 'Overlay', ceiling=thresholds[0]), layout)
             if brain_data_full.shape != cum_data_full.shape:
                 raise ValueError("Structural and cumulative segmentation volumes must match in shape.")
         else:
             all_masks = []
             for m_i, seg_path in enumerate(input_files):
                 _, seg_data = load_nifti_robust(seg_path)
-                seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
+                seg_data = to_display(fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i]), layout)
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape than the structural volume.")
                 all_masks.append(seg_data)
@@ -102,8 +109,6 @@ def create_mosaic(
         raise ValueError(f"end_slice ({end_slice}) out of bounds [0, {num_slices_total-1}]")
     if start_slice > end_slice:
         raise ValueError("start_slice cannot exceed end_slice.")
-
-    orientation = get_orientation(brain_nii.affine)
 
     # Build list of slices to use
     valid_slices = [
@@ -350,8 +355,8 @@ def create_mosaic(
                 x0, x1 = col_i * scaled_slice_w, (col_i + 1) * scaled_slice_w
                 draw_border(composite_uint8[y0:y1, x0:x1], border_width, red_border)
 
-    # Add L/R labels
-    left_label, right_label = generate_lr_labels()
+    # Add orientation labels (L/R, or A/P for sagittal slices)
+    left_label, right_label = generate_orientation_labels(layout)
     pad = max(5, int(scale * 10))
     label_scale = min(1.5, scale * 2)
     
@@ -370,26 +375,15 @@ def create_mosaic(
     else:
         right_label_scaled = right_label
     
-    if orientation == 'L-R':
-        if pad + scaled_l_h < canvas_h and pad + scaled_l_w < canvas_w:
-            composite_uint8[pad:pad + scaled_l_h, pad:pad + scaled_l_w, :] = \
-                np.maximum(composite_uint8[pad:pad + scaled_l_h, pad:pad + scaled_l_w, :],
-                          left_label_scaled[..., None] * 0.9)
-        
-        if pad + scaled_r_h < canvas_h and canvas_w - pad - scaled_r_w > 0:
-            composite_uint8[pad:pad + scaled_r_h, -pad - scaled_r_w:-pad if pad > 0 else None, :] = \
-                np.maximum(composite_uint8[pad:pad + scaled_r_h, -pad - scaled_r_w:-pad if pad > 0 else None, :],
-                          right_label_scaled[..., None] * 0.9)
-    else:  # R-L
-        if pad + scaled_r_h < canvas_h and pad + scaled_r_w < canvas_w:
-            composite_uint8[pad:pad + scaled_r_h, pad:pad + scaled_r_w, :] = \
-                np.maximum(composite_uint8[pad:pad + scaled_r_h, pad:pad + scaled_r_w, :],
-                          right_label_scaled[..., None] * 0.9)
-        
-        if pad + scaled_l_h < canvas_h and canvas_w - pad - scaled_l_w > 0:
-            composite_uint8[pad:pad + scaled_l_h, -pad - scaled_l_w:-pad if pad > 0 else None, :] = \
-                np.maximum(composite_uint8[pad:pad + scaled_l_h, -pad - scaled_l_w:-pad if pad > 0 else None, :],
-                          left_label_scaled[..., None] * 0.9)
+    if pad + scaled_l_h < canvas_h and pad + scaled_l_w < canvas_w:
+        composite_uint8[pad:pad + scaled_l_h, pad:pad + scaled_l_w, :] = \
+            np.maximum(composite_uint8[pad:pad + scaled_l_h, pad:pad + scaled_l_w, :],
+                      left_label_scaled[..., None] * 0.9)
+    
+    if pad + scaled_r_h < canvas_h and canvas_w - pad - scaled_r_w > 0:
+        composite_uint8[pad:pad + scaled_r_h, -pad - scaled_r_w:-pad if pad > 0 else None, :] = \
+            np.maximum(composite_uint8[pad:pad + scaled_r_h, -pad - scaled_r_w:-pad if pad > 0 else None, :],
+                      right_label_scaled[..., None] * 0.9)
 
     # Preset resolution: center the mosaic on a black canvas of exactly that size
     if resolution != 'auto':
