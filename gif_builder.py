@@ -3,14 +3,14 @@ Animation (GIF or WebP) creation for NeuroMontage.
 """
 
 import numpy as np
-import nibabel as nib
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
+from image_utils import (get_slice, generate_lr_labels,
+                         get_orientation, resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
-                         fill_non_finite, slice_has_content)
+                         fill_non_finite, slice_has_content, prepare_thresholds,
+                         draw_contours, draw_border, segmentation_in_slice)
 
 
 def create_gif(
@@ -43,12 +43,7 @@ def create_gif(
         single_file = (num_inputs == 1)
         outline_mode = (not single_file) or outline
 
-        if thresholds is None:
-            thresholds = [0.0]
-        if len(thresholds) == 1:
-            thresholds = thresholds * num_inputs
-        elif len(thresholds) != num_inputs:
-            raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
+        thresholds = prepare_thresholds(thresholds, num_inputs)
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
@@ -69,8 +64,6 @@ def create_gif(
                 seg_data = fill_non_finite(seg_data, f'Mask {m_i + 1}', ceiling=thresholds[m_i])
                 if seg_data.shape != brain_data_full.shape:
                     raise ValueError(f"Segmentation {seg_path} has a different shape.")
-                if seg_data.ndim == 4:
-                    seg_data = seg_data[:, :, :, 0]
                 all_masks.append(seg_data)
 
             # Robust normalization for brain
@@ -122,21 +115,8 @@ def create_gif(
                 seg_slice = get_slice(mask_vol, slice_idx)
                 thr_i = thresholds[m_i]
                 binary_slice = (seg_slice > thr_i).astype(np.uint8)
-                contours = find_contours_on_slice(binary_slice)
-                color = contour_colors[m_i]
-
-                for contour in contours:
-                    for pt_idx, (r, c) in enumerate(contour):
-                        if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
-                            continue
-                        rr = int(round(r))
-                        cc = int(round(c))
-                        for dr in (-1, 0, 1):
-                            for dc in (-1, 0, 1):
-                                rrr = rr + dr
-                                ccc = cc + dc
-                                if 0 <= rrr < slice_h and 0 <= ccc < slice_w:
-                                    frame_uint8[rrr, ccc, :] = color
+                draw_contours(frame_uint8, binary_slice, contour_colors[m_i], contour_patterns[m_i],
+                              offsets=(-1, 0, 1))
         else:
             base_norm = norm_brain(base_slice)
             rgb_base = plt.cm.gray(base_norm)[..., :3]
@@ -159,24 +139,9 @@ def create_gif(
 
         # Highlight
         if highlight and has_segmentation:
-            has_seg = False
-            if not outline_mode and single_file:
-                sl = cum_data_full[:, :, slice_idx]
-                if np.any(sl > thresholds[0]):
-                    has_seg = True
-            elif outline_mode:
-                for m_i, mask_vol in enumerate(all_masks):
-                    sl = mask_vol[:, :, slice_idx]
-                    if np.any(sl > thresholds[m_i]):
-                        has_seg = True
-                        break
-            if has_seg:
-                red_border = np.array([255, 0, 0], dtype=np.uint8)
-                for t in range(2):
-                    frame_uint8[t, :, :] = red_border
-                    frame_uint8[slice_h - 1 - t, :, :] = red_border
-                    frame_uint8[:, t, :] = red_border
-                    frame_uint8[:, slice_w - 1 - t, :] = red_border
+            seg_volumes = all_masks if outline_mode else [cum_data_full]
+            if segmentation_in_slice(seg_volumes, thresholds, slice_idx):
+                draw_border(frame_uint8, 2, np.array([255, 0, 0], dtype=np.uint8))
 
         # Convert to PIL and resize to 800px tall (no interpolation when enlarging)
         pil_frame = Image.fromarray(frame_uint8).convert("RGBA")

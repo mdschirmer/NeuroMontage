@@ -3,7 +3,6 @@
 """
 
 import numpy as np
-import nibabel as nib
 import matplotlib.pyplot as plt
 from PIL import Image
 from skimage.transform import resize
@@ -11,10 +10,11 @@ from skimage.transform import resize
 from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLICE_SIZE,
                           calculate_auto_resolution_and_sampling,
                           calculate_optimal_layout)
-from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
+from image_utils import (get_slice, generate_lr_labels,
+                         get_orientation, resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
-                         fill_non_finite, slice_has_content, save_mosaic)
+                         fill_non_finite, slice_has_content, save_mosaic, prepare_thresholds,
+                         draw_contours, draw_border, segmentation_in_slice)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -69,13 +69,7 @@ def create_mosaic(
         single_file = (num_inputs == 1)
         outline_mode = (not single_file) or outline
 
-        # Prepare thresholds
-        if thresholds is None:
-            thresholds = [0.0]
-        if len(thresholds) == 1:
-            thresholds = thresholds * num_inputs
-        elif len(thresholds) != num_inputs:
-            raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
+        thresholds = prepare_thresholds(thresholds, num_inputs)
 
         if not outline_mode:
             _, cum_data_full = load_nifti_robust(input_files[0])
@@ -310,22 +304,9 @@ def create_mosaic(
                         seg_slice_scaled = seg_slice
                     
                     binary_slice = (seg_slice_scaled > thr_i).astype(np.uint8)
-                    contours = find_contours_on_slice(binary_slice)
-                    color = contour_colors[m_i]
-
-                    for contour in contours:
-                        for pt_idx, (r, c) in enumerate(contour):
-                            if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
-                                continue
-                            rr = int(round(r))
-                            cc = int(round(c))
-                            # Draw 2-pixel thick line to survive JPEG compression
-                            for dr in (0, 1):
-                                for dc in (0, 1):
-                                    rrr = rr + dr
-                                    ccc = cc + dc
-                                    if 0 <= rrr < scaled_slice_h and 0 <= ccc < scaled_slice_w:
-                                        outline_canvas[y0 + rrr, x0 + ccc, :] = color
+                    # 2-pixel thick line to survive JPEG compression
+                    draw_contours(outline_canvas[y0:y1, x0:x1], binary_slice,
+                                  contour_colors[m_i], contour_patterns[m_i])
 
     # Build final composite
     if has_segmentation and not outline_mode:
@@ -347,6 +328,7 @@ def create_mosaic(
     if highlight and has_segmentation:
         red_border = np.array([255, 0, 0], dtype=np.uint8)
         border_width = max(2, int(scale * 2))
+        seg_volumes = all_masks if outline_mode else [cum_data_full]
         
         for entry in display_sequence:
             slice_idx, show_overlay, row_i, col_i = entry
@@ -358,27 +340,10 @@ def create_mosaic(
             if not show_overlay:
                 continue
                 
-            has_seg = False
-            if not outline_mode and single_file:
-                sl = cum_data_full[:, :, slice_idx]
-                if np.any(sl > thresholds[0]):
-                    has_seg = True
-            elif outline_mode:
-                for m_i, mask_vol in enumerate(all_masks):
-                    sl = mask_vol[:, :, slice_idx]
-                    if np.any(sl > thresholds[m_i]):
-                        has_seg = True
-                        break
-
-            if has_seg:
+            if segmentation_in_slice(seg_volumes, thresholds, slice_idx):
                 y0, y1 = row_i * scaled_slice_h, (row_i + 1) * scaled_slice_h
                 x0, x1 = col_i * scaled_slice_w, (col_i + 1) * scaled_slice_w
-                
-                for t in range(border_width):
-                    composite_uint8[y0 + t, x0:x1, :] = red_border
-                    composite_uint8[y1 - 1 - t, x0:x1, :] = red_border
-                    composite_uint8[y0:y1, x0 + t, :] = red_border
-                    composite_uint8[y0:y1, x1 - 1 - t, :] = red_border
+                draw_border(composite_uint8[y0:y1, x0:x1], border_width, red_border)
 
     # Add L/R labels
     left_label, right_label = generate_lr_labels()

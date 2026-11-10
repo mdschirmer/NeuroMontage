@@ -7,7 +7,6 @@ import nibabel as nib
 import skimage.measure
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, LogNorm, ListedColormap
-from skimage.transform import resize
 
 
 def load_nifti_robust(filepath):
@@ -336,6 +335,60 @@ def get_line_pattern(mask_index):
 CONTOUR_COLOR_NAMES = ['orange', 'skyblue', 'green', 'yellow', 'blue', 'vermillion', 'pink', 'black']
 LINE_STYLE_NAMES = ['solid', 'dashed', 'dotted', 'long-dash', 'short-dash',
                     'very-long-dash', 'medium-dash', 'dense-dash']
+
+
+def prepare_thresholds(thresholds, num_inputs):
+    """
+    One threshold per segmentation file. A single value applies to all files.
+    
+    Raises:
+        ValueError: if the number of thresholds is not 1 or num_inputs
+    """
+    if thresholds is None:
+        thresholds = [0.0]
+    if len(thresholds) == 1:
+        return thresholds * num_inputs
+    if len(thresholds) != num_inputs:
+        raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
+    return thresholds
+
+
+def draw_contours(target, binary_slice, color, pattern_index, offsets=(0, 1)):
+    """
+    Draw the (dashed) contour of a binary slice into an RGB array.
+    
+    Args:
+        target: H×W×3 array (or view) with the same size as binary_slice
+        binary_slice: 2D array of 0/1
+        color: RGB color in the dtype range of target
+        pattern_index: Line pattern index (see get_line_pattern)
+        offsets: Pixel offsets that set the line thickness, e.g. (0, 1) = 2 px
+    """
+    h, w = target.shape[:2]
+    for contour in find_contours_on_slice(binary_slice):
+        for pt_idx, (r, c) in enumerate(contour):
+            if not should_draw_pixel(pt_idx, pattern_index):
+                continue
+            rr = int(round(r))
+            cc = int(round(c))
+            for dr in offsets:
+                for dc in offsets:
+                    if 0 <= rr + dr < h and 0 <= cc + dc < w:
+                        target[rr + dr, cc + dc, :] = color
+
+
+def draw_border(target, width, color):
+    """Draw a border of the given width around an RGB array (or view)."""
+    for t in range(width):
+        target[t, :, :] = color
+        target[-1 - t, :, :] = color
+        target[:, t, :] = color
+        target[:, -1 - t, :] = color
+
+
+def segmentation_in_slice(volumes, thresholds, slice_idx):
+    """True if any 3D volume has a value above its threshold in slice slice_idx."""
+    return any(np.any(vol[:, :, slice_idx] > thr) for vol, thr in zip(volumes, thresholds))
 
 
 def resolve_outline_styles(n_masks, colors=None, line_styles=None):

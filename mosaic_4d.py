@@ -4,21 +4,21 @@ Each volume is displayed in a single row, with optional segmentation overlays.
 """
 
 import numpy as np
-import nibabel as nib
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import resize
 
-from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling, 
-                          calculate_optimal_layout, limit_scale, max_upscale,
+from layout_utils import (RESOLUTION_PRESETS, calculate_auto_resolution_and_sampling,
+                          limit_scale, max_upscale,
                           MIN_SLICE_SIZE)
-from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
-                         get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
-                         calculate_robust_normalization, calculate_overlay_colors,
+from image_utils import (get_slice, generate_lr_labels,
+                         get_orientation, resolve_outline_styles,
+                         calculate_overlay_colors,
                          calculate_median_excluding_background, load_nifti_robust,
-                         fill_non_finite, slice_has_content, save_mosaic)
+                         fill_non_finite, slice_has_content, save_mosaic, prepare_thresholds,
+                         draw_contours, draw_border, segmentation_in_slice)
 
 # Increase PIL's image size limit
 Image.MAX_IMAGE_PIXELS = None
@@ -104,13 +104,7 @@ def create_super_mosaic_4d(
         single_file = (num_inputs == 1)
         outline_mode = (not single_file) or outline
         
-        # Prepare thresholds
-        if thresholds is None:
-            thresholds = [0.0]
-        if len(thresholds) == 1:
-            thresholds = thresholds * num_inputs
-        elif len(thresholds) != num_inputs:
-            raise ValueError(f"Number of thresholds ({len(thresholds)}) must be 1 or equal to number of input_files ({num_inputs}).")
+        thresholds = prepare_thresholds(thresholds, num_inputs)
         
         # Load and validate segmentation data
         if not outline_mode:
@@ -261,14 +255,7 @@ def create_super_mosaic_4d(
     # Calculate volume medians for intensity indicators
     volume_medians = []
     for vol_idx in range(n_volumes):
-        volume_data = brain_data_4d[:, :, :, vol_idx]
-        threshold_5pct = np.percentile(np.unique(volume_data), 5)
-        brain_voxels = volume_data[volume_data > threshold_5pct]
-        if brain_voxels.size > 0:
-            vol_median_original = np.median(brain_voxels)
-        else:
-            vol_median_original = np.median(volume_data)
-        volume_medians.append(vol_median_original)
+        volume_medians.append(calculate_median_excluding_background(brain_data_4d[:, :, :, vol_idx]))
     
     median_min = min(volume_medians)
     median_max = max(volume_medians)
@@ -397,22 +384,9 @@ def create_super_mosaic_4d(
                         
                         thr_i = thresholds[m_i]
                         binary_slice = (seg_slice_scaled > thr_i).astype(np.uint8)
-                        contours = find_contours_on_slice(binary_slice)
-                        color = contour_colors[m_i] / 255.0
-                        
-                        for contour in contours:
-                            for pt_idx, (r, c) in enumerate(contour):
-                                if not should_draw_pixel(pt_idx, contour_patterns[m_i]):
-                                    continue
-                                rr = int(round(r))
-                                cc = int(round(c))
-                                # Draw 2-pixel thick line to survive JPEG compression
-                                for dr in (0, 1):
-                                    for dc in (0, 1):
-                                        rrr = rr + dr
-                                        ccc = cc + dc
-                                        if 0 <= rrr < scaled_slice_h and 0 <= ccc < scaled_slice_w:
-                                            rgb_slice[rrr, ccc, :] = color
+                        # 2-pixel thick line to survive JPEG compression
+                        draw_contours(rgb_slice, binary_slice, contour_colors[m_i] / 255.0,
+                                      contour_patterns[m_i])
             else:
                 rgb_slice = rgb_brain
             
@@ -421,34 +395,14 @@ def create_super_mosaic_4d(
             
             # Highlight slices with segmentation
             if highlight and has_segmentation and show_overlay:
-                has_seg_in_slice = False
-                
-                if not outline_mode:
-                    if seg_is_4d:
-                        seg_slice_check = seg_data_full[:, :, slice_idx, vol_idx]
-                    else:
-                        seg_slice_check = seg_data_full[:, :, slice_idx]
-                    if np.any(seg_slice_check > thresholds[0]):
-                        has_seg_in_slice = True
+                if outline_mode:
+                    seg_volumes = [mask_data[:, :, :, vol_idx] if masks_are_4d[m_i] else mask_data
+                                   for m_i, mask_data in enumerate(all_masks)]
                 else:
-                    for m_i, mask_data in enumerate(all_masks):
-                        if masks_are_4d[m_i]:
-                            seg_slice_check = mask_data[:, :, slice_idx, vol_idx]
-                        else:
-                            seg_slice_check = mask_data[:, :, slice_idx]
-                        if np.any(seg_slice_check > thresholds[m_i]):
-                            has_seg_in_slice = True
-                            break
-                
-                if has_seg_in_slice:
-                    red_border = np.array([1.0, 0.0, 0.0])
-                    border_width = max(2, int(scale * 2))
-                    
-                    for t in range(border_width):
-                        canvas_rgb[row_y_start + t, col_x_start:col_x_end, :] = red_border
-                        canvas_rgb[row_y_end - 1 - t, col_x_start:col_x_end, :] = red_border
-                        canvas_rgb[row_y_start:row_y_end, col_x_start + t, :] = red_border
-                        canvas_rgb[row_y_start:row_y_end, col_x_end - 1 - t, :] = red_border
+                    seg_volumes = [seg_data_full[:, :, :, vol_idx] if seg_is_4d else seg_data_full]
+                if segmentation_in_slice(seg_volumes, thresholds, slice_idx):
+                    draw_border(canvas_rgb[row_y_start:row_y_end, col_x_start:col_x_end],
+                                max(2, int(scale * 2)), np.array([1.0, 0.0, 0.0]))
         
         # Add L/R labels for this row
         add_lr_labels_to_row(

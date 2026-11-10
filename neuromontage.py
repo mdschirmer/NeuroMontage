@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.17"
+__version__ = "2.3.0.18"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -54,7 +54,6 @@ import nibabel as nib
 from mosaic_3d import create_mosaic
 from mosaic_4d import create_super_mosaic_4d
 from gif_builder import create_gif
-from image_utils import load_nifti_robust
 
 
 def parse_args():
@@ -197,22 +196,19 @@ def main():
               file=sys.stderr)
         return 1
 
-    # Load brain data to check dimensionality (with robust error handling)
+    # Read the image shape from the header (the builders load the data)
     try:
-        brain_nii, brain_data_full = load_nifti_robust(args.brain_file)
-    except ValueError as e:
-        print(str(e), file=sys.stderr)
-        return 1
+        brain_shape = nib.load(args.brain_file).shape
     except Exception as e:
         print(f"[NeuroMontage] Error loading {args.brain_file}: {e}", file=sys.stderr)
         return 1
 
     # Route to appropriate handler
-    if args.rows is not None and (args.animate or len(brain_data_full.shape) == 4):
+    if args.rows is not None and (args.animate or len(brain_shape) == 4):
         print("[NeuroMontage] Warning: --rows only applies to 3D mosaics. Ignoring --rows.")
 
     if args.animate:
-        if len(brain_data_full.shape) == 4:
+        if len(brain_shape) == 4:
             print("[NeuroMontage] Error: animations are not supported for 4D data. "
                   "Use a .jpg, .png or .webp output file instead.", file=sys.stderr)
             return 1
@@ -233,7 +229,7 @@ def main():
             line_styles=args.line_styles
         )
     else:
-        if len(brain_data_full.shape) == 4:
+        if len(brain_shape) == 4:
             print("[NeuroMontage] Creating 4D super mosaic...")
             if args.resolution == 'auto':
                 print("[NeuroMontage] Note: In auto mode, adaptive sampling may be applied to maintain quality.")
