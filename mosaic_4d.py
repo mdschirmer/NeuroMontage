@@ -18,7 +18,7 @@ from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels,
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors,
                          calculate_median_excluding_background, load_nifti_robust,
-                         fill_non_finite, slice_has_content)
+                         fill_non_finite, slice_has_content, save_mosaic)
 
 # Increase PIL's image size limit
 Image.MAX_IMAGE_PIXELS = None
@@ -513,10 +513,8 @@ def create_super_mosaic_4d(
         draw.text((x0 - label_gap, y_center), label, fill=(0, 0, 0), font=label_font, anchor='rm')
     
     # Save - use format based on extension
-    if output_file.lower().endswith('.png'):
-        frame.save(output_file, format='PNG')
-    else:
-        frame.save(output_file, format='JPEG', quality=95)
+    fine_lines = has_segmentation and (outline_mode or highlight)
+    save_mosaic(frame, output_file, fine_lines=fine_lines)
     print(f"[NeuroMontage] 4D mosaic saved to {output_file}")
 
 

@@ -168,7 +168,7 @@ usage: neuromontage.py [-h] [--version] -b BRAIN [-s SEG ...] -o OUTPUT
 | Flag | Description |
 |------|-------------|
 | `-b`, `--brain_file` | Structural brain NIfTI (T1/T2/FLAIR, 3D or 4D) |
-| `-o`, `--output_file` | Destination `.jpg`, `.jpeg` or `.png` (mosaic) **or** `.gif` (animation) |
+| `-o`, `--output_file` | Destination `.jpg`, `.jpeg`, `.png` or `.webp` (mosaic) **or** `.gif` (animation). `.webp` gives the smallest files |
 
 ### Segmentation Arguments
 
@@ -311,7 +311,9 @@ When you provide a 4D NIfTI file (e.g., diffusion, fMRI, or multi-echo data), Ne
 * Adjust `--alpha` (0.5-0.8) to balance visibility of anatomy vs. overlay
 
 ### File Sizes
-* JPEG mosaics are automatically optimized (quality=95)
+* JPEG mosaics use quality 95 with full-resolution color, so thin outlines keep their color
+* WebP mosaics (`.webp`) are about 45% smaller than JPEG at the same quality; they are lossless when outlines or highlight borders are drawn
+* PNG mosaics are lossless
 * GIFs are resized to 800px height to keep file sizes manageable
 * For very large datasets, consider using `--slice_step` or letting auto mode handle sampling
 

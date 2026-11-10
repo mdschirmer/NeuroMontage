@@ -14,7 +14,7 @@ from layout_utils import (RESOLUTION_PRESETS, MAX_WIDTH, MAX_HEIGHT_3D, MIN_SLIC
 from image_utils import (get_slice, find_contours_on_slice, generate_lr_labels, 
                          get_orientation, get_contour_colors, should_draw_pixel, resolve_outline_styles,
                          calculate_robust_normalization, calculate_overlay_colors, load_nifti_robust,
-                         fill_non_finite, slice_has_content)
+                         fill_non_finite, slice_has_content, save_mosaic)
 
 # Increase PIL's image size limit to handle large mosaics
 Image.MAX_IMAGE_PIXELS = None
@@ -435,9 +435,6 @@ def create_mosaic(
                   f"{resolution.upper()}. Not padded to {out_w}×{out_h}.")
 
     # Save - use format based on extension
-    final_image = Image.fromarray(composite_uint8)
-    if output_file.lower().endswith('.png'):
-        final_image.save(output_file, format='PNG')
-    else:
-        final_image.save(output_file, format='JPEG', quality=95)
+    fine_lines = has_segmentation and (outline_mode or highlight)
+    save_mosaic(Image.fromarray(composite_uint8), output_file, fine_lines=fine_lines)
     print(f"[NeuroMontage] Mosaic saved to {output_file}")

@@ -41,7 +41,7 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.0.14"
+__version__ = "2.3.0.15"
 __date__ = "2026-11-09"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
@@ -103,7 +103,8 @@ def parse_args():
     )
     parser.add_argument(
         '-o', '--output_file', type=str, required=True,
-        help='Output file path: .jpg, .jpeg or .png for a mosaic, .gif for an animated GIF.'
+        help=('Output file path: .jpg, .jpeg, .png or .webp for a mosaic, .gif for an animated GIF. '
+              '.webp gives the smallest files (lossless when outlines or highlight borders are drawn).')
     )
     parser.add_argument(
         '--resolution', type=str, default='auto',
@@ -191,8 +192,8 @@ def main():
         print(f"[NeuroMontage] Error: --gif needs an output file ending in .gif (got '{ext or 'no extension'}').",
               file=sys.stderr)
         return 1
-    elif ext not in ('.jpg', '.jpeg', '.png'):
-        print(f"[NeuroMontage] Error: output file must end in .jpg, .jpeg, .png or .gif (got '{ext or 'no extension'}').",
+    elif ext not in ('.jpg', '.jpeg', '.png', '.webp'):
+        print(f"[NeuroMontage] Error: output file must end in .jpg, .jpeg, .png, .webp or .gif (got '{ext or 'no extension'}').",
               file=sys.stderr)
         return 1
 
@@ -213,7 +214,7 @@ def main():
     if args.gif:
         if len(brain_data_full.shape) == 4:
             print("[NeuroMontage] Error: GIF creation is not supported for 4D data. "
-                  "Use a .jpg or .png output file instead.", file=sys.stderr)
+                  "Use a .jpg, .png or .webp output file instead.", file=sys.stderr)
             return 1
         
         print("[NeuroMontage] Creating animated GIF...")

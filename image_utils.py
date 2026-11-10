@@ -189,6 +189,43 @@ def slice_has_content(slice_2d):
     return slice_2d.max() > slice_2d.min()
 
 
+# Largest image side that WebP can store
+WEBP_MAX_SIDE = 16383
+
+
+def save_mosaic(image, output_file, fine_lines=False):
+    """
+    Save a mosaic image. The file extension selects the format.
+    
+    - .png:  lossless
+    - .jpg / .jpeg: quality 95, full-resolution color (4:4:4), so thin colored
+      lines (outlines, highlight borders) keep their color
+    - .webp: quality 95; lossless if fine_lines is True, because lossy WebP always
+      stores color at half resolution and would smear thin colored lines
+    
+    Args:
+        image: PIL Image (RGB)
+        output_file: Output path (.png, .jpg, .jpeg or .webp)
+        fine_lines: True if the image has thin colored lines (outlines, highlight borders)
+    
+    Raises:
+        ValueError: if the image is too large for WebP
+    """
+    ext = output_file.lower().rsplit('.', 1)[-1]
+    if ext == 'png':
+        image.save(output_file, format='PNG')
+    elif ext == 'webp':
+        if max(image.size) > WEBP_MAX_SIDE:
+            raise ValueError(f"[NeuroMontage] Image is {image.size[0]}×{image.size[1]} px. WebP allows at most "
+                             f"{WEBP_MAX_SIDE} px per side. Use a .png or .jpg output file instead.")
+        if fine_lines:
+            image.save(output_file, format='WEBP', lossless=True, method=6)
+        else:
+            image.save(output_file, format='WEBP', quality=95, method=6)
+    else:
+        image.save(output_file, format='JPEG', quality=95, subsampling=0)
+
+
 def get_slice(img_data, idx):
     """
     Return the idx-th axial slice (rotated 90° clockwise for a consistent orientation).
