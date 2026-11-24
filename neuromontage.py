@@ -41,8 +41,8 @@ Features:
     numpy, nibabel, matplotlib, Pillow, scikit-image
 """
 
-__version__ = "2.3.1.0"
-__date__ = "2026-11-10"
+__version__ = "2.3.1.1"
+__date__ = "2026-11-24"
 __author__ = "MDS"
 __organization__ = "MGH/HMS"
 __description__ = "NeuroMontage - Brain Overlay Mosaic Generator"

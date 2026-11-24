@@ -24,6 +24,19 @@ def load_nifti_robust(filepath, return_rgb=False):
     return (nii, data, rgb) if return_rgb else (nii, data)
 
 
+def _unscaled_data(nii):
+    """
+    Stored voxel values without the header scaling (scl_slope, scl_inter).
+    
+    Scaling only applies to numeric data. For RGB data and raw bytes it is not
+    defined (and numpy cannot apply it), so these are read without it.
+    """
+    dataobj = nii.dataobj
+    if hasattr(dataobj, 'get_unscaled'):
+        return np.asanyarray(dataobj.get_unscaled())
+    return np.asanyarray(dataobj)
+
+
 def _load_nifti(filepath):
     """
     Load a NIfTI file with robust error handling for unusual data types.
@@ -51,11 +64,17 @@ def _load_nifti(filepath):
     
     # RGB / RGBA images (e.g. diffusion color maps): keep the colors, and use the
     # mean of R, G and B as the gray value for everything that needs one value
+    # (header scaling does not apply to RGB data)
     if raw_dtype.names and {'R', 'G', 'B'} <= set(raw_dtype.names):
-        raw_data = np.asanyarray(nii.dataobj)
+        raw_data = _unscaled_data(nii)
         rgb = np.stack([raw_data[c] for c in 'RGB'], axis=-1).astype(np.uint8)
         print("[NeuroMontage] RGB image: shown in color")
         return nii, rgb.astype(np.float64).mean(axis=-1), rgb
+    
+    # Complex images (e.g. complex reconstructions): show the magnitude
+    if raw_dtype.kind == 'c':
+        print("[NeuroMontage] Complex image: showing the magnitude")
+        return nii, np.abs(np.asanyarray(nii.dataobj)).astype(np.float64), None
     
     # First attempt: standard get_fdata()
     try:
@@ -70,13 +89,11 @@ def _load_nifti(filepath):
     
     # Second attempt: try loading raw data and converting
     try:
-        dataobj = nii.dataobj
-        
         # Check for structured/compound dtypes
         if hasattr(raw_dtype, 'subdtype') and raw_dtype.subdtype is not None:
             base_dtype, sub_shape = raw_dtype.subdtype
             print(f"[NeuroMontage] Structured dtype: base={base_dtype}, shape={sub_shape}")
-            raw_data = np.asarray(dataobj)
+            raw_data = _unscaled_data(nii)
             if raw_data.dtype.names:
                 first_field = raw_data.dtype.names[0]
                 data = raw_data[first_field].astype(np.float64)
@@ -85,8 +102,8 @@ def _load_nifti(filepath):
             print(f"[NeuroMontage] Successfully loaded with structured dtype handling")
             return nii, data, None
         
-        # Try to interpret void dtype
-        raw_data = np.asarray(dataobj)
+        # Try to interpret void dtype (raw bytes: read without header scaling)
+        raw_data = _unscaled_data(nii)
         if raw_data.dtype == np.dtype('void') or str(raw_data.dtype).startswith('V'):
             nbytes = raw_data.nbytes
             expected_elements = np.prod(shape) if shape else 1
